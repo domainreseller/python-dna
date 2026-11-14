@@ -36,10 +36,10 @@ pip install domainnameapi
 
 ### ب) تثبيت حزمة إصدار
 
-نزّل ملف wheel ‏(`domainnameapi-1.0.0-py3-none-any.whl`) أو أرشيف الشيفرة المصدرية من [أحدث إصدار](https://github.com/domainreseller/python-dna/releases/latest) ثم ثبّته:
+نزّل ملف wheel ‏(`domainnameapi-1.0.1-py3-none-any.whl`) أو أرشيف الشيفرة المصدرية من [أحدث إصدار](https://github.com/domainreseller/python-dna/releases/latest) ثم ثبّته:
 
 ```bash
-pip install domainnameapi-1.0.0-py3-none-any.whl
+pip install domainnameapi-1.0.1-py3-none-any.whl
 ```
 
 ### ج) استخدام الشيفرة المصدرية مباشرة
@@ -135,8 +135,6 @@ dna = DomainNameAPI(reseller_id, api_key, os.environ.get("DNA_TEST_MODE", "false
 ## تقارير الأخطاء (القياس عن بُعد)
 
 عندما يفشل استدعاء API، يمكن للمكتبة إرسال تقرير خطأ إلى نظام تتبع الأخطاء الخاص بـ DomainNameAPI ‏(Sentry). كما يُرسَل جزء صغير عشوائي من الاستدعاءات الناجحة (4%، بالإضافة إلى كل استدعاء تتجاوز مدته ثانية واحدة) كسجل أداء. يساعد ذلك DomainNameAPI على اكتشاف المشكلات وإصلاحها. تقارير الأخطاء **مفعّلة افتراضيًا**.
-
-> ℹ️ في الإصدار 1.0.0 لا يزال عنوان Sentry المدمج فارغًا، لأن مشروع Sentry الخاص بـ python-dna لم يُنشأ بعد: **لا يتم إرسال أي شيء** حتى يملأه تحديث للمكتبة، أو حتى تمرّر عنوانك الخاص باستخدام `DomainNameAPI(..., sentry_dsn="https://key@sentry.example.com/1")`.
 
 تُرسَل التقارير من خيط (thread) في الخلفية: فهي لا تُبطئ استدعاءك ولا تعطّله أبدًا. ولا يتم أبدًا الإبلاغ عن الأخطاء المتوقعة كثيرة التكرار (نطاق غير موجود، رصيد غير كافٍ، بيانات اعتماد غير صالحة، لا توجد إعادة توجيه مُعدّة، ...).
 

@@ -39,11 +39,11 @@ pip install domainnameapi
 
 ### B) Release paketi ile kurulum
 
-Wheel dosyasını (`domainnameapi-1.0.0-py3-none-any.whl`) veya kaynak arşivini
+Wheel dosyasını (`domainnameapi-1.0.1-py3-none-any.whl`) veya kaynak arşivini
 [son sürüm](https://github.com/domainreseller/python-dna/releases/latest) sayfasından indirip kurun:
 
 ```bash
-pip install domainnameapi-1.0.0-py3-none-any.whl
+pip install domainnameapi-1.0.1-py3-none-any.whl
 ```
 
 ### C) Kaynak kodu doğrudan kullanma
@@ -154,10 +154,6 @@ dna = DomainNameAPI(reseller_id, api_key, os.environ.get("DNA_TEST_MODE", "false
 Bir API çağrısı başarısız olduğunda kütüphane, DomainNameAPI'nin kendi hata takip sistemine (Sentry) bir hata raporu
 gönderebilir. Başarılı çağrıların rastgele seçilen küçük bir kısmı (%4, ayrıca 1 saniyeden uzun süren her çağrı)
 performans kaydı olarak gönderilir. Bu, DomainNameAPI'nin sorunları bulup düzeltmesine yardımcı olur. Hata raporlama **varsayılan olarak açıktır**.
-
-> ℹ️ 1.0.0 sürümünde yerleşik Sentry adresi henüz boştur, çünkü python-dna için Sentry projesi
-> henüz oluşturulmamıştır: bir kütüphane güncellemesi bu adresi doldurana veya siz
-> `DomainNameAPI(..., sentry_dsn="https://key@sentry.example.com/1")` ile kendi adresinizi verene kadar **hiçbir şey gönderilmez**.
 
 Raporlar arka planda çalışan bir thread üzerinden gönderilir: çağrınızı asla yavaşlatmaz veya bozmaz.
 Beklenen ve yüksek hacimli hatalar (alan adı bulunamadı, yetersiz bakiye, geçersiz API bilgileri, yapılandırılmamış yönlendirme, ...) hiçbir zaman

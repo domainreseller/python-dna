@@ -39,11 +39,11 @@ pip install domainnameapi
 
 ### B) Installazione da un pacchetto di release
 
-Scarica il wheel (`domainnameapi-1.0.0-py3-none-any.whl`) o l'archivio dei sorgenti dall'
+Scarica il wheel (`domainnameapi-1.0.1-py3-none-any.whl`) o l'archivio dei sorgenti dall'
 [ultima release](https://github.com/domainreseller/python-dna/releases/latest) e installalo:
 
 ```bash
-pip install domainnameapi-1.0.0-py3-none-any.whl
+pip install domainnameapi-1.0.1-py3-none-any.whl
 ```
 
 ### C) Uso diretto dei sorgenti
@@ -154,10 +154,6 @@ dna = DomainNameAPI(reseller_id, api_key, os.environ.get("DNA_TEST_MODE", "false
 Quando una chiamata API fallisce, la libreria può inviare una segnalazione di errore al sistema di tracciamento errori di DomainNameAPI
 (Sentry). Una piccola quota casuale delle chiamate riuscite (4%, più ogni chiamata che dura più di 1 secondo) viene inviata come
 record di prestazioni. Questo aiuta DomainNameAPI a trovare e correggere i problemi. La segnalazione errori è **attiva per impostazione predefinita**.
-
-> ℹ️ Nella versione 1.0.0 l'indirizzo Sentry integrato è ancora vuoto, perché il progetto Sentry per
-> python-dna non è ancora stato creato: **non viene inviato nulla** finché un aggiornamento della libreria non lo imposta, oppure finché non
-> passi un tuo indirizzo con `DomainNameAPI(..., sentry_dsn="https://key@sentry.example.com/1")`.
 
 Le segnalazioni vengono inviate da un thread in background: non rallentano né interrompono mai la tua chiamata.
 Gli errori previsti e molto frequenti (dominio non trovato, saldo insufficiente, credenziali non valide, nessun inoltro configurato, ...) non vengono mai

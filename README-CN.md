@@ -36,10 +36,10 @@ pip install domainnameapi
 
 ### B) 安装 Release 包
 
-从[最新版本](https://github.com/domainreseller/python-dna/releases/latest)下载 wheel 文件（`domainnameapi-1.0.0-py3-none-any.whl`）或源码压缩包，然后进行安装：
+从[最新版本](https://github.com/domainreseller/python-dna/releases/latest)下载 wheel 文件（`domainnameapi-1.0.1-py3-none-any.whl`）或源码压缩包，然后进行安装：
 
 ```bash
-pip install domainnameapi-1.0.0-py3-none-any.whl
+pip install domainnameapi-1.0.1-py3-none-any.whl
 ```
 
 ### C) 直接使用源码
@@ -135,8 +135,6 @@ dna = DomainNameAPI(reseller_id, api_key, os.environ.get("DNA_TEST_MODE", "false
 ## 错误报告（遥测）
 
 当 API 调用失败时，本库可以向 DomainNameAPI 自己的错误跟踪系统（Sentry）发送一份错误报告。成功调用中会随机抽取一小部分（4%，另外所有耗时超过 1 秒的调用）作为性能记录发送。这有助于 DomainNameAPI 发现并修复问题。错误报告**默认开启**。
-
-> ℹ️ 在 1.0.0 版本中，内置的 Sentry 地址仍为空，因为 python-dna 的 Sentry 项目尚未创建：在库的后续更新填入该地址之前，或在您通过 `DomainNameAPI(..., sentry_dsn="https://key@sentry.example.com/1")` 传入自己的地址之前，**不会发送任何数据**。
 
 报告通过后台线程发送：绝不会拖慢或中断您的调用。预期内的高频错误（域名未找到、余额不足、凭据无效、未配置转发等）永远不会被报告。
 

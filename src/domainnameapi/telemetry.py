@@ -29,8 +29,8 @@ from . import _php as php
 from .shared import APPLICATION, DEFAULT_CACHE_TTL, DEFAULT_IGNORED_ERRORS, PERFORMANCE_SAMPLE_RATE
 from ._version import VERSION
 
-# Filled in once the Sentry project for python-dna exists; empty = telemetry is a no-op.
-DEFAULT_SENTRY_DSN = ""
+# DomainNameAPI's Sentry project for python-dna; set_error_reporting_enabled(False) turns reporting off.
+DEFAULT_SENTRY_DSN = "https://1cbaa0843d67fc637efd1d9e827ec158@sentry.atakdomain.com/17"
 
 _MASK_RE = re.compile(r"auth|epp|password|passwd|secret|token|api[_-]?key", re.IGNORECASE)
 

@@ -16,8 +16,8 @@ def api():
 
 class FacadeTest(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(VERSION, "1.0.0")
-        self.assertEqual(__version__, "1.0.0")
+        self.assertEqual(VERSION, "1.0.1")
+        self.assertEqual(__version__, "1.0.1")
         self.assertIs(DomainNameApi, DomainNameAPI)
 
     def test_php_style_aliases(self):
