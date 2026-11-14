@@ -10,6 +10,12 @@ if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
 from domainnameapi.transport import HttpResponse, TransportError  # noqa: E402
+from domainnameapi import telemetry as _telemetry  # noqa: E402
+
+# The built-in DSN is DomainNameAPI's real Sentry project: no test may post to it.
+# Telemetry objects pick up _post when they are created, so blanking it here covers
+# every client the suite builds; telemetry tests install their own poster.
+_telemetry._post = lambda url, payload, auth: None
 
 FIXTURE_DIR = os.path.join(ROOT, "tests", "testdata", "conformance")
 

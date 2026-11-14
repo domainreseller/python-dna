@@ -28,7 +28,7 @@ class HeadersAndUrlTest(unittest.TestCase):
         self.assertEqual(h["Content-Type"], "application/json")
         self.assertEqual(h["Accept"], "application/json")
         self.assertEqual(h["User-Agent"], USER_AGENT)
-        self.assertEqual(USER_AGENT, "DomainNameAPI-Python/1.0.0")
+        self.assertEqual(USER_AGENT, "DomainNameAPI-Python/1.0.1")
 
     def test_base_urls(self):
         self.assertEqual(make(FakeTransport()).get_service_url(), URL_PROD)

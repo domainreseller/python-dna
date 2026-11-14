@@ -39,11 +39,11 @@ pip install domainnameapi
 
 ### B) Release paketi ilə quraşdırma
 
-Wheel faylını (`domainnameapi-1.0.0-py3-none-any.whl`) və ya mənbə arxivini
+Wheel faylını (`domainnameapi-1.0.1-py3-none-any.whl`) və ya mənbə arxivini
 [son buraxılış](https://github.com/domainreseller/python-dna/releases/latest) səhifəsindən yükləyin və quraşdırın:
 
 ```bash
-pip install domainnameapi-1.0.0-py3-none-any.whl
+pip install domainnameapi-1.0.1-py3-none-any.whl
 ```
 
 ### C) Mənbə kodundan birbaşa istifadə
@@ -154,10 +154,6 @@ dna = DomainNameAPI(reseller_id, api_key, os.environ.get("DNA_TEST_MODE", "false
 API çağırışı uğursuz olduqda kitabxana DomainNameAPI-nin öz xəta izləmə sisteminə (Sentry) xəta hesabatı
 göndərə bilər. Uğurlu çağırışların təsadüfi seçilmiş kiçik bir hissəsi (4%, üstəlik 1 saniyədən uzun çəkən hər çağırış)
 performans qeydi kimi göndərilir. Bu, DomainNameAPI-yə problemləri tapıb düzəltməyə kömək edir. Xəta hesabatları **standart olaraq aktivdir**.
-
-> ℹ️ 1.0.0 versiyasında daxili Sentry ünvanı hələ boşdur, çünki python-dna üçün Sentry layihəsi
-> hələ yaradılmayıb: kitabxana yeniləməsi bu ünvanı doldurana və ya siz
-> `DomainNameAPI(..., sentry_dsn="https://key@sentry.example.com/1")` ilə öz ünvanınızı ötürənə qədər **heç nə göndərilmir**.
 
 Hesabatlar arxa fon thread-i vasitəsilə göndərilir: çağırışınızı heç vaxt yavaşlatmır və ya pozmur.
 Gözlənilən, yüksək həcmli xətalar (domen tapılmadı, balans kifayət deyil, yanlış API məlumatları, yönləndirmə qurulmayıb, ...) heç vaxt

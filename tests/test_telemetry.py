@@ -22,11 +22,8 @@ def client(transport, dsn=DSN, minimal=False):
 
 
 class DsnTest(unittest.TestCase):
-    def test_default_dsn_is_empty_noop(self):
-        self.assertEqual(tm.DEFAULT_SENTRY_DSN, "")
-        api, sent = client(FakeTransport().push(500, '{"error":{"message":"boom"}}'), dsn=None)
-        api.get_details("example.com")
-        self.assertEqual(sent, [])
+    def test_default_dsn_is_python_project(self):
+        self.assertEqual(tm.DEFAULT_SENTRY_DSN, "https://1cbaa0843d67fc637efd1d9e827ec158@sentry.atakdomain.com/17")
 
     def test_parse_dsn(self):
         p = tm.parse_dsn(DSN)
@@ -73,10 +70,10 @@ class ErrorEventTest(unittest.TestCase):
         self.assertEqual(url, "https://sentry.example.test/api/42/store/")
         self.assertIn("sentry_key=publickey", auth)
         self.assertIn("sentry_secret=secret", auth)
-        self.assertIn("sentry_client=DomainNameAPI-Python/1.0.0", auth)
+        self.assertIn("sentry_client=DomainNameAPI-Python/1.0.1", auth)
         self.assertEqual(ev["tags"]["application"], "DomainNameAPI-Python")
-        self.assertEqual(ev["tags"]["library_version"], "1.0.0")
-        self.assertEqual(ev["release"], "1.0.0")
+        self.assertEqual(ev["tags"]["library_version"], "1.0.1")
+        self.assertEqual(ev["release"], "1.0.1")
         self.assertEqual(ev["tags"]["api_code"], "API_500")
         self.assertEqual(ev["tags"]["domain"], "example.com")
         self.assertEqual(ev["tags"]["reseller"], RESELLER)
