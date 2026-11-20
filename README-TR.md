@@ -1,7 +1,7 @@
 <div align="center">
-  <a href="README-TR.md"   >   TR <img style="padding-top: 8px" src="https://raw.githubusercontent.com/yammadev/flag-icons/master/png/TR.png" alt="TR" height="20" /></a>
+  <a href="README-TR.md">TR <img style="padding-top: 8px" src="https://raw.githubusercontent.com/yammadev/flag-icons/master/png/TR.png" alt="TR" height="20" /></a>
   <a href="README.md"> | EN <img style="padding-top: 8px" src="https://raw.githubusercontent.com/yammadev/flag-icons/master/png/US.png" alt="EN" height="20" /></a>
-   <a href="README-DE.md"> | DE <img style="padding-top: 8px" src="https://raw.githubusercontent.com/yammadev/flag-icons/master/png/DE.png" alt="DE" height="20" /></a>
+  <a href="README-DE.md"> | DE <img style="padding-top: 8px" src="https://raw.githubusercontent.com/yammadev/flag-icons/master/png/DE.png" alt="DE" height="20" /></a>
   <a href="README-SA.md"> | SA <img style="padding-top: 8px" src="https://raw.githubusercontent.com/yammadev/flag-icons/master/png/SA.png" alt="AR" height="20" /></a>
   <a href="README-NL.md"> | NL <img style="padding-top: 8px" src="https://raw.githubusercontent.com/yammadev/flag-icons/master/png/NL.png" alt="NL" height="20" /></a>
   <a href="README-AZ.md"> | AZ <img style="padding-top: 8px" src="https://raw.githubusercontent.com/yammadev/flag-icons/master/png/AZ.png" alt="AZ" height="20" /></a>
@@ -10,1589 +10,570 @@
   <a href="README-IT.md"> | IT <img style="padding-top: 8px" src="https://raw.githubusercontent.com/yammadev/flag-icons/master/png/IT.png" alt="IT" height="20" /></a>
 </div>
 
+# python-dna: Domain Name API için Python SDK'sı
 
-# python-dna: Python için DomainNameAPI istemcisi
+[![PyPI](https://img.shields.io/pypi/v/domainnameapi.svg)](https://pypi.org/project/domainnameapi/)
+[![CI](https://github.com/domainreseller/python-dna/actions/workflows/ci.yml/badge.svg)](https://github.com/domainreseller/python-dna/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-[DomainNameAPI](https://www.domainnameapi.com) reseller REST API'si için Python istemcisi: alan adı sorgulama, kayıt,
-transfer ve yenileme işlemlerini yapın; kontakları, nameserver'ları, child nameserver'ları, DNS zone'larını ve URL yönlendirmeyi yönetin.
-[php-dna](https://github.com/domainreseller/php-dna) kütüphanesinin birebir sadık bir uyarlamasıdır: aynı metotlar, aynı istekler,
-aynı dönüş değerleri; php-dna'nın uyumluluk (conformance) fixture'larıyla doğrulanmıştır.
+[Domain Name API](https://www.domainnameapi.com) bayi REST API'si için tip güvenli Python istemcisi: alan adı
+sorgulama, kayıt, yenileme ve transfer, DNS, DNSSEC, iletişim kayıtları, SSL sertifikaları, hosting, siparişler,
+ürün kataloğu ve bakiyeniz.
 
-## 📦 İndirme — her zaman Releases kullanın!
+- **API'nin 64 işleminin tamamı**, [`dna` CLI](https://github.com/domainreseller/cli) ile aynı şekilde gruplanmıştır:
+  `dna domain info` komutu `client.domains.info`, `dna dns add` komutu `client.dns.add` karşılığıdır.
+- **Tip güvenli sonuçlar ve enum'lar**: sözlük değil, `datetime` alanlı dataclass'lar ve adlandırılmış durumlar
+  (`d.status == DomainStatus.PENDING_DELETE`). Editörünüz her alanı tamamlar.
+- **Her işlem, `BaseRequest`'ten türeyen bir istek sınıfıdır** ve herhangi bir şey gönderilmeden önce kendini
+  doğrular. Kendi isteklerinizi de aynı şekilde yazabilirsiniz.
+- **Anlamına göre yakalayabileceğiniz istisnalar**: `NotFoundError`, `InsufficientBalanceError`, `RateLimitError`,
+  `OperationError`, ... hata kodları, ipuçları ve korelasyon ID'leri ile.
+- **Varsayılan olarak güvenli**: ücretlendirilen istekler körlemesine yeniden denenmez, `read_only=True`
+  değişiklikleri engeller, istemci hız sınırlarının altında kalacak şekilde kendini ayarlar ve thread'ler arasında
+  paylaşılması güvenlidir.
+- **Yalnızca standart kütüphane.** Python 3.9 veya üzeri. Telemetri yok: yaptığınız API istekleri dışında
+  süreciniz dışına hiçbir şey çıkmaz.
 
-⬇️ **En güncel test edilmiş sürümü buradan indirin: https://github.com/domainreseller/python-dna/releases/latest**
+```python
+import domainnameapi as dna
 
-> ⚠️ Yeşil **Code → Download ZIP** butonunu **kullanmayın** — bu buton ham geliştirme dalını (development branch) indirir. Release paketleri sürümlenmiş, test edilmiş ve canlı kullanıma hazırdır.
+client = dna.Client(reseller_id, api_key, environment="ote")
 
-## Kurulum ve Entegrasyon Rehberi
+result = client.domains.search("example.com")
+if result.available:
+    print(f"{result.domain_name} is available for {result.price:.2f} {result.currency}")
+```
 
-### Minimum Gereksinimler
+## İçindekiler
 
-- Python 3.8 veya daha üstü (önerilen 3.12)
-- Üçüncü parti paket gerekmez: kütüphane yalnızca Python standart kütüphanesini (`urllib`, `json`, `ssl`) kullanır.
+- [Kurulum](#kurulum)
+- [Kimlik bilgileri ve ortamlar](#kimlik-bilgileri-ve-ortamlar)
+- [Servisler](#servisler)
+- [Kullanım](#kullanım)
+- [API istekleri ve BaseRequest](#api-istekleri-ve-baserequest)
+- [Hatalar](#hatalar)
+- [Güvenlik ve güvenilirlik](#güvenlik-ve-güvenilirlik)
+- [Client seçenekleri](#client-seçenekleri)
+- [Kodunuzu test etme](#kodunuzu-test-etme)
+- [v1'den geçiş](#v1den-geçiş)
+- [Geliştirme](#geliştirme)
 
-### A) pip ile kurulum
+## Kurulum
 
 ```bash
 pip install domainnameapi
 ```
 
-### B) Release paketi ile kurulum
-
-Wheel dosyasını (`domainnameapi-1.0.1-py3-none-any.whl`) veya kaynak arşivini
-[son sürüm](https://github.com/domainreseller/python-dna/releases/latest) sayfasından indirip kurun:
+Sürümlü, test edilmiş paketler ayrıca [Releases](https://github.com/domainreseller/python-dna/releases)
+sayfasındadır. Çalıştırılabilir programlar [examples](examples) klasöründedir: `quickstart.py`, `register.py`,
+`expiring.py`, `dns_zone.py`, `ssl_certificate.py`, `custom_request.py` ve `error_handling.py`.
 
 ```bash
-pip install domainnameapi-1.0.1-py3-none-any.whl
+python examples/quickstart.py example.com
 ```
 
-### C) Kaynak kodu doğrudan kullanma
+## Kimlik bilgileri ve ortamlar
 
-`src/domainnameapi` klasörünü kodunuzun yanına kopyalayın (veya `src` klasörünü `PYTHONPATH`'e ekleyin) ve import edin.
-[examples](examples) klasöründe her metot için çalıştırılabilir bir örnek betik bulunur.
+Bayi panelinden (**API ayarları**) iki API kimlik bilgisi almanız gerekir. Panel giriş bilgileri çalışmaz.
 
-## 🔑 API Bilgileri — Reseller ID ve API Key
+| Kimlik bilgisi | Görünümü                               |
+|----------------|----------------------------------------|
+| Reseller ID    | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
+| API key        | uzun bir gizli dize                    |
 
-Kütüphane DomainNameAPI REST API ile konuşur ve constructor'a verilen yalnızca iki bilgiye ihtiyaç duyar:
-
-| Parametre | Değer |
-|---|---|
-| Birinci | Reseller ID — `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` biçiminde UUID |
-| İkinci | API Key |
-
-> 💡 **Reseller ID** ve **API Key** bilgilerinizi DomainNameAPI panelinizdeki **API Ayarları** bölümünde bulabilirsiniz.
-> ⚠️ Bunlar **API bilgileridir** — panel giriş bilgileriniz burada **ÇALIŞMAZ**.
+İki ortam vardır. **Test ortamı olan OTE ile başlayın**: kendi verisi ve kendi API anahtarı vardır; orada
+yaptığınız hiçbir şey ücret doğurmaz ve canlı alan adlarına dokunmaz.
 
 ```python
-from domainnameapi import DomainNameAPI
+# Test ortamı (OTE)
+client = dna.Client(reseller_id, ote_api_key, environment="ote")
 
-reseller_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-api_key = "your-api-key"
-
-# Live environment
-dna = DomainNameAPI(reseller_id, api_key)
-
-# Test (OTE) environment
-dna = DomainNameAPI(reseller_id, api_key, True)
+# Production (varsayılan): gerçek kayıtlar, gerçek ücretlendirme
+client = dna.Client(reseller_id, api_key)
 ```
 
-Bilgilerin başındaki ve sonundaki boşluklar otomatik olarak temizlenir.
+`Client.from_env()`, `dna` CLI ile aynı değişkenleri okur:
 
-## Hızlı Başlangıç
+| Değişken          | Anlamı                                                        |
+|-------------------|---------------------------------------------------------------|
+| `DNA_RESELLER_ID` | reseller ID                                                   |
+| `DNA_API_KEY`     | seçilen ortamın API anahtarı                                  |
+| `DNA_ENV`         | `production` (varsayılan) veya `ote`                          |
+| `DNA_TEST_MODE`   | `true` OTE'yi seçer (diğer DomainNameAPI SDK'larındaki gibi)  |
+| `DNA_BASE_URL`    | özel bir temel URL, ör. bir proxy                             |
 
 ```python
-from domainnameapi import DomainNameAPI
-
-dna = DomainNameAPI("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "your-api-key")
-
-details = dna.get_details("example.com")
-if details["result"] == "OK":
-    print(details["data"]["Dates"]["Expiration"])
-else:
-    print(details["error"]["Code"], details["error"]["Message"])
+client = dna.Client.from_env(user_agent="my-panel/1.4")
 ```
 
-Metot adları snake_case biçimindedir (`get_details`, `register_with_contact_info`). php-dna'daki adlar da takma ad (alias) olarak çalışır;
-böylece PHP'den taşınan kod `dna.GetDetails(...)` veya `dna.getDetails(...)` kullanmaya devam edebilir.
+`environment` ayrıca panellerin sakladığı test modu bayraklarını da kabul eder: `True`, `"true"`, `"1"`, `"on"`,
+`"yes"` OTE anlamına gelir. Yanlış bir anahtar veya ortam, ilk istekte `AuthenticationError` ile ve bir ipucuyla
+başarısız olur; kontrol etmenin en ucuz yolu `client.account.get()` çağrısıdır.
 
-## Dönüş Değerleri ve Hata Yönetimi
+## Servisler
 
-Metotlar, php-dna'nın döndürdüğü anahtarların birebir aynısını içeren düz `dict`/`list` değerleri döndürür. Gateway veya ağ sorunlarında
-exception **fırlatmazlar**; bunun yerine `result` değerini kontrol edin:
+| Servis            | CLI grubu     | Metotlar                                                                                                                                                          |
+|-------------------|---------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `client.account`  | `dna account` | `get`, `transactions`, `all_transactions`                                                                                                                         |
+| `client.contacts` | `dna contact` | `get`, `create`, `update`, `verification`, `resend_verification`                                                                                                  |
+| `client.domains`  | `dna domain`  | `search`, `bulk_search`, `list`, `all`, `info`, `register`, `register_with_contacts`, `renew`, `renew_check`, `restore`, `transfer`, `transfer_check`, `transfer_status`, `lock`, `unlock`, `set_privacy`, `update_auth_code`, `set_name_servers`, `add_host`, `update_host`, `delete_host`, `update_contacts`, `set_contact_handles`, `documents`, `upload_documents`, `forwarding`, `set_forwarding`, `delete_forwarding` |
+| `client.dns`      | `dna dns`     | `list`, `find`, `add`, `update`, `delete`, `apply`                                                                                                                |
+| `client.dnssec`   | `dna dnssec`  | `get`, `add`, `remove`, `disable`                                                                                                                                 |
+| `client.ssl`      | `dna ssl`     | `generate_csr`, `check_csr`, `initialize`, `configure`, `status`, `get`, `content`, `reissue`, `approvers`, `revoke`                                              |
+| `client.hosting`  | `dna hosting` | `packages`, `plans`, `create`, `wait`, `get`, `get_by_token`, `status`                                                                                            |
+| `client.orders`   | `dna order`   | `get`                                                                                                                                                             |
+| `client.products` | `dna product` | `list`, `info`, `tlds`, `all_tlds`, `tld`, `ssls`                                                                                                                 |
 
-```python
-# Success
-{"result": "OK", "data": {...}}
-
-# Failure
-{"result": "ERROR", "error": {"Code": "API_404", "Message": "...", "Details": "...",
-                              "GatewayCode": "Dna.DomainService:Domain:10007"}}
-```
-
-- `Code`, gateway hatalarında `API_<HTTP durum kodu>` biçimindedir (`API_400`, `API_404`, `API_429`, `API_500`, ...).
-  Yönlendirme (redirect) yanıtı (hatalı API bilgileri) `Invalid API credentials` mesajıyla birlikte `API_302` döndürür.
-- `GatewayCode`: gateway kendi hata kodunu gönderdiğinde (örneğin `Dna.DomainService:Domain:10007`) `API_<status>` hatalarına eklenir; böylece "alan adı bulunamadı" ile "TLD desteklenmiyor" ayırt edilebilir.
-- `Message`, gateway'in mesajıdır. Boş hata gövdeleri `HTTP <status> - <reason>` biçimine dönüştürülür
-  (örneğin `HTTP 429 - Too Many Requests`).
-- `Details`, gateway'in ayrıntılarını (yoksa ham yanıt gövdesini) içerir; doğrulama (validation) hataları okunabilir bir alan listesine dönüştürülür,
-  örneğin `Admin PostalCode, Tech PostalCode - 'PostalCode' is required`.
-- Ağ hataları da hata olarak döner, asla boş bir başarı yanıtı olarak değil: zaman aşımında
-  `Could not reach the DomainNameAPI service: the connection timed out. (...)` mesajıyla `CURL_28` döner; DNS, bağlantı ve TLS
-  hataları `Curl error during request: ...` mesajıyla `CURL_6`, `CURL_7`, `CURL_35`/`CURL_60` döndürür
-  (curl hata numaraları; php-dna'nın raporladığı kodların aynısı). `API_` kodları yalnızca HTTP durum kodları için kullanılır.
-- Gateway HTTP 200 ile yanıt verse bile ret bir hatadır: kayıt, transfer veya yenileme `success: false` ile dönerse metot gateway'in mesajıyla birlikte `REGISTER_DOMAIN`, `TRANSFER_DOMAIN` veya `RENEW_DOMAIN` döndürür.
-- Bayraklar php-dna'daki tiplerini korur: `LockStatus` `"true"`/`"false"` string değeridir, fiyatlar biçimlendirilmiş string'lerdir
-  (`"11.9900"`).
-
-Birkaç metot, php-dna'da olduğu gibi kendi yanıt yapısını (envelope) kullanır:
-
-| Metot | Başarılı olduğunda | Başarısız olduğunda |
-|---|---|---|
-| `check_availability` | sonuçlardan oluşan düz bir `list` | `ERROR` yapısı |
-| `get_current_balance` | `OperationResult: "SUCCESS"` | `ErrorCode` (`API_<status>`, `CURL_<errno>` veya hesabın bildirmediği bir para birimi için `BALANCE`) ile birlikte `OperationResult: "FAILED"` |
-| `check_transfer` | yalnızca alan adı transfer edilebiliyorsa `result: "OK"` | `data` ve `error` ile birlikte `result: "ERROR"` |
-| `is_tr_tld`, `validate_contact` | düz değerler (ağ çağrısı yok) | — |
-
-Yalnızca programlama hataları (örneğin `set_resource_record_set` bir liste beklerken string verilmesi)
-Python exception'ı fırlatır.
-
-Zaman aşımı süreleri çağrı başına 30 saniye, bağlantı kurmak için 10 saniyedir. Yönlendirmeler (redirect) takip edilmez.
-
-## Test Modu (OTE)
-
-`https://ote.domainresellerapi.com/api/v1` test ortamını kullanmak için üçüncü argüman olarak `True` verin.
-Yapılandırma dosyalarından gelen string değerler de anlaşılır: `"true"`, `"1"`, `"on"`, `"yes"` test modunu açar,
-diğer her değer (`"false"`, `"0"`, `"off"`, `""`) canlı ortamda kalır.
-
-```python
-dna = DomainNameAPI(reseller_id, api_key, True)
-dna = DomainNameAPI(reseller_id, api_key, os.environ.get("DNA_TEST_MODE", "false"))
-```
-
-## Hata Raporlama (Telemetri)
-
-Bir API çağrısı başarısız olduğunda kütüphane, DomainNameAPI'nin kendi hata takip sistemine (Sentry) bir hata raporu
-gönderebilir. Başarılı çağrıların rastgele seçilen küçük bir kısmı (%4, ayrıca 1 saniyeden uzun süren her çağrı)
-performans kaydı olarak gönderilir. Bu, DomainNameAPI'nin sorunları bulup düzeltmesine yardımcı olur. Hata raporlama **varsayılan olarak açıktır**.
-
-Raporlar arka planda çalışan bir thread üzerinden gönderilir: çağrınızı asla yavaşlatmaz veya bozmaz.
-Beklenen ve yüksek hacimli hatalar (alan adı bulunamadı, yetersiz bakiye, geçersiz API bilgileri, yapılandırılmamış yönlendirme, ...) hiçbir zaman
-raporlanmaz.
-
-**Gönderilenler:**
-
-- hata kodu ve mesajı
-- çağrılan uç nokta (endpoint) yolu ve HTTP yöntemi
-- çağrı süresi
-- kütüphane adı (`DomainNameAPI-Python`), kütüphane sürümü ve Python sürümü
-- bayi kimliği (Reseller ID) ve alan adı
-- sunucunun genel (public) IP adresi (`api.ipify.org` üzerinden öğrenilir) ve işletim sistemi kullanıcı adı
-- API isteği ve yanıtı, alan adının kişi bilgileri dahil; yalnızca kimlik bilgileri maskelenir — EPP/transfer kodları, API anahtarları, parolalar ve token'lar `***` ile değiştirilir
-
-**Asla gönderilmeyenler:** okunabilir biçimde EPP/transfer kodları, API anahtarları, parolalar veya token'lar; hata izlerindeki (stack trace) fonksiyon çağrısı argümanları.
-
-**Neden ve ne kadar süre:** veriler yalnızca kullanım ölçümü ve sorunların erken teşhisi için kullanılır; DomainNameAPI'nin kendi Sentry sunucusunda 30 gün saklanır, ardından otomatik olarak silinir.
-
-**Nasıl kapatılır:** istemciyi oluşturduktan sonra `set_error_reporting_enabled(False)` çağırın:
-
-```python
-dna = DomainNameAPI(reseller_id, api_key)
-dna.set_error_reporting_enabled(False)
-```
-
-**Minimal mod:** `set_telemetry_minimal(True)` yalnızca hata kodunu ve mesajını, uç noktayı, süreyi,
-sürümleri ve Reseller ID'yi gönderir — istek/yanıt verisi, alan adı, IP adresi veya kullanıcı adı gönderilmez.
-
-```python
-dna.set_telemetry_minimal(True)
-```
-
-> 🔒 **Güvenlik:** TLS sertifika doğrulaması açıktır. CA paketi güncel olmayan bir sunucuda `dna.set_ssl_verification(False)` ile kapatılabilir — önerilmez; CA paketini güncellemek daha doğru çözümdür.
+Zorunlu girdiler konumsal argümandır (`client.domains.info("example.com")`), isteğe bağlı olanlar anahtar
+sözcük argümanıdır (`client.domains.list(statuses=[DomainStatus.ACTIVE], limit=50)`). Enum argümanları enum'u,
+API adını (büyük/küçük harf fark etmez) veya numarasını kabul eder: `DomainStatus.ACTIVE`, `"active"` ve `0`
+aynıdır.
 
 ## Kullanım
 
-Aşağıdaki tüm örneklerde şu kurulum varsayılmıştır:
+Tüm kod parçaları `import domainnameapi as dna` satırını ve bir `client` olduğunu varsayar.
+
+### Arama
 
 ```python
-from domainnameapi import DomainNameAPI
+a = client.domains.search("example.com")
+# a.available, a.price, a.currency, a.is_premium, a.is_document_required, a.reason
 
-dna = DomainNameAPI("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "your-api-key")
+for r in client.domains.bulk_search(["example.com", "example.net", "example.org"]):
+    print(r.domain_name, r.status, r.price)
 ```
 
-Örnek çıktılar, kütüphanenin gerçek dönüş değerleridir.
+`bulk_search`, 30 alan adından uzun listeleri birkaç isteğe böler. Fiyatlar hesabın para birimiyle ya da
+`dna.Client(..., currency="TRY")` veya `search(..., currency="TRY")` ile ayarlanan para birimiyle gelir.
 
-### Hesap
+### Kayıt
 
-#### Reseller Bilgilerini Alma
-
-Reseller hesap bilgileri: ID, ad ve bakiyeler (USD ve TL).
-
-```python
-result = dna.get_reseller_details()
-```
-
-<details>
-<summary>Örnek çıktı</summary>
+İletişim handle'ları ile (bir tane `contacts.create` ile oluşturun):
 
 ```python
-{'result': 'OK',
- 'id': '00000000-0000-4000-8000-000000000001',
- 'active': True,
- 'name': 'example-reseller',
- 'balance': '601.64',
- 'currency': 'USD',
- 'symbol': '$',
- 'balances': [{'balance': '601.64', 'currency': 'USD', 'symbol': '$'},
-              {'balance': '1250.50', 'currency': 'TL', 'symbol': 'TL'}]}
-```
+handle = client.contacts.create(dna.Contact(
+    first_name="Ada", last_name="Lovelace", email="ada@example.com",
+    address="1 Example Street", city="Istanbul", state="Istanbul", postal_code="34000",
+    country="TR", phone_country_code="90", phone="5551234567",
+))
 
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Güncel Bakiyeyi Alma
-
-Tek bir para birimindeki güncel bakiye: USD (varsayılan) veya TRY. Hesabın bildirmediği bir para birimi (EUR, GBP, ...) ErrorCode BALANCE ile OperationResult FAILED döndürür.
-
-```python
-result = dna.get_current_balance("USD")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'ErrorCode': 0,
- 'OperationMessage': 'Command completed succesfully.',
- 'OperationResult': 'SUCCESS',
- 'Balance': '601.64',
- 'CurrencyId': 2,
- 'CurrencyInfo': None,
- 'CurrencyName': 'USD',
- 'CurrencySymbol': '$'}
-```
-
-</details>
-
-
-### Sorgulama ve Listeler
-
-#### Alan Adı Uygunluk Kontrolü
-
-Her alan adı + uzantı kombinasyonunun uygunluğu ve fiyatı. Başarılı olduğunda düz bir liste, başarısız olduğunda hata yapısı döndürür.
-
-```python
-result = dna.check_availability(
-    ["dnaprobexyz123", "google", "premium"],  # names without extension
-    ["com", "net"],                           # extensions
-    1,                                        # period (years)
-    "create",                                 # command: create / renew / transfer
-)
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-[{'TLD': 'com',
-  'DomainName': 'dnaprobexyz123',
-  'Status': 'available',
-  'Command': 'create',
-  'Period': 1,
-  'IsFee': False,
-  'Price': '11.9900',
-  'Currency': 'USD',
-  'Reason': None},
- {'TLD': 'net',
-  'DomainName': 'dnaprobexyz123',
-  'Status': 'available',
-  'Command': 'create',
-  'Period': 1,
-  'IsFee': False,
-  'Price': '13.9900',
-  'Currency': 'USD',
-  'Reason': None},
- {'TLD': 'com',
-  'DomainName': 'google',
-  'Status': 'notavailable',
-  'Command': 'create',
-  'Period': 1,
-  'IsFee': False,
-  'Price': '11.9900',
-  'Currency': 'USD',
-  'Reason': 'Domain exists'},
- {'TLD': 'net',
-  'DomainName': 'premium',
-  'Status': 'available',
-  'Command': 'create',
-  'Period': 1,
-  'IsFee': True,
-  'Price': '2500.0000',
-  'Currency': 'USD',
-  'Reason': None}]
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Alan Adları Listesi
-
-Reseller hesabındaki alan adları. Filtreler: PageNumber (0'dan başlar), PageSize, OrderColumn, OrderDirection, DomainName ...
-
-```python
-result = dna.get_list({
-    "PageNumber": 0,
-    "PageSize": 50,
-    "OrderColumn": "ExpirationDate",
-    "OrderDirection": "DESC",
-})
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'data': {'Domains': [{'ID': 11,
-                       'Status': 'ok',
-                       'DomainName': 'example.com',
-                       'AuthCode': '',
-                       'LockStatus': 'true',
-                       'PrivacyProtectionStatus': 'true',
-                       'IsChildNameServer': 'false',
-                       'Contacts': {'Billing': {'ID': ''},
-                                    'Technical': {'ID': ''},
-                                    'Administrative': {'ID': ''},
-                                    'Registrant': {'ID': ''}},
-                       'Dates': {'Start': '2024-03-15T10:20:30',
-                                 'Expiration': '2027-03-15T10:20:30',
-                                 'RemainingDays': 126},
-                       'NameServers': ['ns1.example.net', 'ns2.example.net'],
-                       'Additional': [],
-                       'ChildNameServers': []},
-                      {'ID': 12,
-                       'Status': 'Deleted',
-                       'DomainName': 'example.net',
-                       'AuthCode': '',
-                       'LockStatus': 'false',
-                       'PrivacyProtectionStatus': 'false',
-                       'IsChildNameServer': 'false',
-                       'Contacts': {'Billing': {'ID': ''},
-                                    'Technical': {'ID': ''},
-                                    'Administrative': {'ID': ''},
-                                    'Registrant': {'ID': ''}},
-                       'Dates': {'Start': '2023-01-01T00:00:00',
-                                 'Expiration': '2026-01-01T00:00:00',
-                                 'RemainingDays': 0},
-                       'NameServers': [],
-                       'Additional': [],
-                       'ChildNameServers': []},
-                      {'ID': 13,
-                       'Status': 'WaitingForRegistration',
-                       'DomainName': 'example.org',
-                       'AuthCode': '',
-                       'LockStatus': 'false',
-                       'PrivacyProtectionStatus': 'false',
-                       'IsChildNameServer': 'false',
-                       'Contacts': {'Billing': {'ID': ''},
-                                    'Technical': {'ID': ''},
-                                    'Administrative': {'ID': ''},
-                                    'Registrant': {'ID': ''}},
-                       'Dates': {'Start': '', 'Expiration': '', 'RemainingDays': 0},
-                       'NameServers': [],
-                       'Additional': [],
-                       'ChildNameServers': []}]},
- 'result': 'OK',
- 'TotalCount': 3}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### TLD Listesi
-
-Dönem bazında fiyatlarıyla TLD listesi (kayıt, yenileme, transfer, geri yükleme ...).
-
-```python
-result = dna.get_tld_list(100)
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'data': [{'id': 1,
-           'status': 'Active',
-           'maxchar': 63,
-           'maxperiod': 10,
-           'minchar': 1,
-           'minperiod': 1,
-           'tld': 'aero',
-           'pricing': {'registration': {'1': '44.9900',
-                                        '2': '94.9100',
-                                        '3': '144.8300'},
-                       'renew': {'1': '49.9200', '2': '99.8400'},
-                       'transfer': {'1': '44.9900'}},
-           'currencies': {'registration': 'USD', 'renew': 'USD', 'transfer': 'USD'}},
-          {'id': 2,
-           'status': 'Passive',
-           'maxchar': 50,
-           'maxperiod': 10,
-           'minchar': 2,
-           'minperiod': 1,
-           'tld': 'com.tr',
-           'pricing': {'registration': {'1': '15.5000', '2': '30.0000'},
-                       'renew': {'1': '15.5000'},
-                       'transfer': {'1': '0.0000'}},
-           'currencies': {'registration': 'TRY', 'renew': 'TRY', 'transfer': 'USD'}},
-          {'id': 3,
-           'status': 'Active',
-           'maxchar': 63,
-           'maxperiod': 10,
-           'minchar': 1,
-           'minperiod': 1,
-           'tld': 'xyz',
-           'pricing': {},
-           'currencies': {}}],
- 'result': 'OK'}
-```
-
-</details>
-
-
-### Alan Adları
-
-#### Domain Kaydı
-
-Yeni bir alan adı kaydedin. Kontaklar düz (`AddressLine1`, `Phone`, ...) veya iç içe (`Address.Line1`, `Phone.Phone.Number`, ...) biçimde verilebilir. Eksik alanlar tamamlanır ve telefon numaraları normalize edilir (bkz. `validate_contact`). Boş bir nameserver listesi verilirse `ns1.domainnameapi.com` / `ns2.domainnameapi.com` kullanılır.
-
-```python
-contact = {
-    "FirstName": "Ahmet",
-    "LastName": "Yilmaz",
-    "Company": "",
-    "EMail": "ahmet.yilmaz@example.com",
-    "AddressLine1": "Ornek Sokak No: 123",
-    "AddressLine2": "Daire 4",
-    "AddressLine3": "",
-    "City": "Istanbul",
-    "Country": "TR",
-    "Fax": "2121234567",
-    "FaxCountryCode": "90",
-    "Phone": "5551234567",
-    "PhoneCountryCode": 90,
-    "Type": "Contact",
-    "ZipCode": "34000",
-    "State": "Istanbul",
-}
-
-contacts = {
-    "Administrative": contact,
-    "Billing": contact,
-    "Technical": contact,
-    "Registrant": contact,
-}
-
-result = dna.register_with_contact_info(
+res = client.domains.register(
     "example.com",
-    1,                                       # period (years)
-    contacts,
-    ["ns1.example.com", "ns2.example.com"],  # empty list -> default nameservers
-    True,                                    # theft protection lock
-    False,                                   # privacy protection
+    years=1,
+    name_servers=["ns1.example.net", "ns2.example.net"],
+    handles=handle,  # dört rolün hepsi için tek handle veya dna.ContactHandles(registrant="DNA-1", admin="DNA-2", ...)
 )
 ```
 
-<details>
-<summary>Örnek çıktı</summary>
+Satır içi iletişim bilgileri ile:
 
 ```python
-{'data': {'ID': 0,
-          'Status': 'Active',
-          'DomainName': '',
-          'AuthCode': '',
-          'LockStatus': 'false',
-          'PrivacyProtectionStatus': 'false',
-          'IsChildNameServer': 'false',
-          'Contacts': {'Billing': {'ID': 0},
-                       'Technical': {'ID': 0},
-                       'Administrative': {'ID': 0},
-                       'Registrant': {'ID': 0}},
-          'Dates': {'Start': '',
-                    'Expiration': '2027-11-09T12:00:00',
-                    'RemainingDays': 366},
-          'NameServers': [],
-          'Additional': [],
-          'ChildNameServers': []},
- 'result': 'OK'}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Domain Kaydı (.tr)
-
-`.tr` alan adları 7. argüman olarak TRABIS özniteliklerine ihtiyaç duyar. Bireysel sahip: `TRABISDOMAINCATEGORY` = `1` ve `TRABISCITIZENID` (T.C. kimlik numarası). Kurumsal sahip: `TRABISDOMAINCATEGORY` = `0`, `TRABISTAXOFFICE` ve `TRABISTAXNUMBER`. Eski (legacy) anahtarlar (`TRABISCITIZIENID`, `TRABISNAMESURNAME`, `TRABISCOUNTRYID`, ...) kabul edilir: REST şemasına dönüştürülür, desteklenmeyenler atılır.
-
-```python
-individual = {
-    "TRABISDOMAINCATEGORY": 1,
-    "TRABISCITIZIENID": "11111111111",
-}
-
-commercial = {
-    "TRABISDOMAINCATEGORY": 0,
-    "TRABISTAXOFFICE": "Istanbul VD",
-    "TRABISTAXNUMBER": "1234567890",
-}
-
-result = dna.register_with_contact_info(
-    "example.com.tr",
-    1,
-    contacts,
-    ["ns1.example.com", "ns2.example.com"],
-    True,
-    False,
-    individual,  # or commercial
-)
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'data': {'ID': 0,
-          'Status': 'Active',
-          'DomainName': '',
-          'AuthCode': '',
-          'LockStatus': 'false',
-          'PrivacyProtectionStatus': 'false',
-          'IsChildNameServer': 'false',
-          'Contacts': {'Billing': {'ID': 0},
-                       'Technical': {'ID': 0},
-                       'Administrative': {'ID': 0},
-                       'Registrant': {'ID': 0}},
-          'Dates': {'Start': '',
-                    'Expiration': '2027-11-09T12:00:00',
-                    'RemainingDays': 366},
-          'NameServers': [],
-          'Additional': [],
-          'ChildNameServers': []},
- 'result': 'OK'}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Domain Yenileme
-
-Bir alan adını belirtilen yıl sayısı kadar yenileyin.
-
-```python
-result = dna.renew("example.com", 1)
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'result': 'OK', 'data': {'ExpirationDate': '2027-11-09T12:00:00'}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Alan Adı Detayları
-
-Bir alan adının tüm detayları: durum, tarihler, nameserver'lar, kilit/gizlilik bayrakları, child nameserver'lar.
-
-```python
-result = dna.get_details("example.com")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'data': {'ID': 4321,
-          'Status': 'Active',
-          'DomainName': 'example.com',
-          'AuthCode': 'Ab1!xyZ9',
-          'LockStatus': 'true',
-          'PrivacyProtectionStatus': 'false',
-          'IsChildNameServer': 'true',
-          'Contacts': {'Billing': {'ID': 'DNA-B-4'},
-                       'Technical': {'ID': 'DNA-T-3'},
-                       'Administrative': {'ID': 'DNA-A-2'},
-                       'Registrant': {'ID': 'DNA-R-1'}},
-          'Dates': {'Start': '2024-03-15T10:20:30',
-                    'Expiration': '2027-03-15T10:20:30',
-                    'RemainingDays': 126},
-          'NameServers': ['ns1.example.net', 'ns2.example.net'],
-          'Additional': {'TRABISDOMAINCATEGORY': '1'},
-          'ChildNameServers': [{'ns': 'ns1.example.com', 'ip': '192.0.2.11'},
-                               {'ns': 'ns2.example.com', 'ip': ''}]},
- 'result': 'OK'}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Registry'den Senkronizasyon
-
-Bir alan adını registry'den güncelleyin (get_details ile aynı yanıt yapısı).
-
-```python
-result = dna.sync_from_registry("example.com")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'data': {'ID': 4321,
-          'Status': 'Active',
-          'DomainName': 'example.com',
-          'AuthCode': 'Ab1!xyZ9',
-          'LockStatus': 'true',
-          'PrivacyProtectionStatus': 'false',
-          'IsChildNameServer': 'true',
-          'Contacts': {'Billing': {'ID': 'DNA-B-4'},
-                       'Technical': {'ID': 'DNA-T-3'},
-                       'Administrative': {'ID': 'DNA-A-2'},
-                       'Registrant': {'ID': 'DNA-R-1'}},
-          'Dates': {'Start': '2024-03-15T10:20:30',
-                    'Expiration': '2027-03-15T10:20:30',
-                    'RemainingDays': 126},
-          'NameServers': ['ns1.example.net', 'ns2.example.net'],
-          'Additional': {'TRABISDOMAINCATEGORY': '1'},
-          'ChildNameServers': [{'ns': 'ns1.example.com', 'ip': '192.0.2.11'},
-                               {'ns': 'ns2.example.com', 'ip': ''}]},
- 'result': 'OK'}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Nameserver Düzenlemesi
-
-Bir alan adının nameserver'larını değiştirin (girdilerin boşlukları temizlenir, küçük harfe çevrilir, tekrarlar ayıklanır).
-
-```python
-result = dna.modify_name_server("example.com", ["ns1.example.net", "ns2.example.net"])
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'result': 'OK', 'data': {'NameServers': ['ns1.example.net', 'ns2.example.net']}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Domain Kilidini Aktifleştirme
-
-Kayıt firması (hırsızlık koruması) kilidini açın.
-
-```python
-result = dna.enable_theft_protection_lock("example.com")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'result': 'OK', 'data': {'LockStatus': True}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Domain Kilidini Kaldırma
-
-Kayıt firması (hırsızlık koruması) kilidini kapatın.
-
-```python
-result = dna.disable_theft_protection_lock("example.com")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'result': 'OK', 'data': {'LockStatus': False}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Domain Gizliliğini Değiştirme
-
-WHOIS gizlilik korumasını açın (True) veya kapatın (False). 1, "1", "on", "true" ve "yes" de açık anlamına gelir; diğer her şey kapalıdır. reason argümanı gateway'e gönderilmez.
-
-```python
-result = dna.modify_privacy_protection_status("example.com", True, "Owner request")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'data': {'PrivacyProtectionStatus': True}, 'result': 'OK'}
-```
-
-</details>
-
-
-### Kontaklar
-
-#### Domain Kontaklarını Alma
-
-Bir alan adının Administrative (yönetici), Billing (fatura), Registrant (sahip) ve Technical (teknik) kontakları.
-
-```python
-result = dna.get_contacts("example.com")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'data': {'contacts': {'Administrative': {'ID': 'DNA-A-2',
-                                          'Status': 'Active',
-                                          'AuthCode': '',
-                                          'FirstName': 'Grace',
-                                          'LastName': 'Hopper',
-                                          'Company': '',
-                                          'EMail': 'grace@example.com',
-                                          'Type': 'Administrative',
-                                          'Address': {'Line1': 'Example Street 2',
-                                                      'Line2': '',
-                                                      'Line3': '',
-                                                      'State': 'DC',
-                                                      'City': 'Washington',
-                                                      'Country': 'US',
-                                                      'ZipCode': '20001'},
-                                          'Phone': {'Phone': {'Number': '2025550100',
-                                                              'CountryCode': '1'},
-                                                    'Fax': {'Number': '2025550101',
-                                                            'CountryCode': '1'}},
-                                          'Additional': []},
-                       'Billing': {'ID': 'DNA-B-4',
-                                   'Status': 'Active',
-                                   'AuthCode': '',
-                                   'FirstName': 'Ada',
-                                   'LastName': 'Lovelace',
-                                   'Company': 'Example Ltd',
-                                   'EMail': 'billing@example.com',
-                                   'Type': 'Billing',
-                                   'Address': {'Line1': 'Example Street 1',
-                                               'Line2': '',
-                                               'Line3': '',
-                                               'State': 'Istanbul',
-                                               'City': 'Istanbul',
-                                               'Country': 'TR',
-                                               'ZipCode': '34000'},
-                                   'Phone': {'Phone': {'Number': '5551234567',
-                                                       'CountryCode': '90'},
-                                             'Fax': {'Number': '', 'CountryCode': ''}},
-                                   'Additional': []},
-                       'Registrant': {'ID': 'DNA-R-1',
-                                      'Status': 'Active',
-                                      'AuthCode': '',
-                                      'FirstName': 'Ada',
-                                      'LastName': 'Lovelace',
-                                      'Company': 'Example Ltd',
-                                      'EMail': 'ada@example.com',
-                                      'Type': 'Registrant',
-                                      'Address': {'Line1': 'Example Street 1',
-                                                  'Line2': '',
-                                                  'Line3': '',
-                                                  'State': 'Istanbul',
-                                                  'City': 'Istanbul',
-                                                  'Country': 'TR',
-                                                  'ZipCode': '34000'},
-                                      'Phone': {'Phone': {'Number': '5551234567',
-                                                          'CountryCode': '90'},
-                                                'Fax': {'Number': '',
-                                                        'CountryCode': ''}},
-                                      'Additional': []},
-                       'Technical': {'ID': 'DNA-T-3',
-                                     'Status': 'Active',
-                                     'AuthCode': '',
-                                     'FirstName': 'Alan',
-                                     'LastName': 'Turing',
-                                     'Company': '',
-                                     'EMail': 'alan@example.com',
-                                     'Type': 'Technical',
-                                     'Address': {'Line1': 'Example Street 3',
-                                                 'Line2': '',
-                                                 'Line3': '',
-                                                 'State': '',
-                                                 'City': 'London',
-                                                 'Country': 'GB',
-                                                 'ZipCode': 'SW1A 1AA'},
-                                     'Phone': {'Phone': {'Number': '2071234567',
-                                                         'CountryCode': '44'},
-                                               'Fax': {'Number': '',
-                                                       'CountryCode': ''}},
-                                     'Additional': []}}},
- 'result': 'OK'}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Domain Kontaklarını Kaydetme
-
-Bir alan adının dört kontağını değiştirin. `contacts`, kayıt örneğindeki sözlüğün (dictionary) aynısıdır.
-
-```python
-result = dna.save_contacts("example.com", contacts)
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'result': 'OK', 'data': {'contacts': {}}}
-```
-
-</details>
-
-
-### Child Nameserver'lar
-
-#### Child Nameserver Ekleme
-
-Bir alan adı altında child nameserver (glue kaydı) oluşturun.
-
-```python
-result = dna.add_child_name_server("example.com", "ns1.example.com", "192.0.2.10")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'result': 'OK',
- 'data': {'NameServer': 'ns1.example.com', 'IPAdresses': ['192.0.2.10']}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Child Nameserver Silme
-
-Bir child nameserver'ı silin.
-
-```python
-result = dna.delete_child_name_server("example.com", "ns1.example.com")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'result': 'OK', 'data': {'NameServer': 'ns1.example.com'}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Child Nameserver Güncelleme
-
-Bir child nameserver'ın IP adresini değiştirin.
-
-```python
-result = dna.modify_child_name_server("example.com", "ns1.example.com", "192.0.2.20")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'result': 'OK',
- 'data': {'NameServer': 'ns1.example.com', 'IPAdresses': ['192.0.2.20']}}
-```
-
-</details>
-
-
-### Transferler
-
-#### Domain Transferi
-
-Alan adının EPP/transfer koduyla gelen bir transfer başlatın. Transferde kontak bilgileri hiçbir zaman gönderilmez (istek her zaman `"contacts": []` içerir): kontaklar kaybeden registrar'dan devralınır, bu yüzden `transfer` metodunun contacts parametresi yoktur. Ret (`success: false`) `TRANSFER_DOMAIN` hatası döndürür.
-
-```python
-result = dna.transfer("example.com", "Ab1!xyZ9", 1)
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'data': {'ID': 0,
-          'Status': 'Active',
-          'DomainName': '',
-          'AuthCode': '',
-          'LockStatus': 'false',
-          'PrivacyProtectionStatus': 'false',
-          'IsChildNameServer': 'false',
-          'Contacts': {'Billing': {'ID': 0},
-                       'Technical': {'ID': 0},
-                       'Administrative': {'ID': 0},
-                       'Registrant': {'ID': 0}},
-          'Dates': {'Start': '',
-                    'Expiration': '2027-11-09T12:00:00',
-                    'RemainingDays': 366},
-          'NameServers': [],
-          'Additional': [],
-          'ChildNameServers': []},
- 'result': 'OK'}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Transfer Kontrolü
-
-Alan adı bu transfer koduyla transfer edilebilir mi? result yalnızca transfer edilebiliyorsa OK olur.
-
-```python
-result = dna.check_transfer("example.com", "Ab1!xyZ9")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'result': 'OK',
- 'data': {'TransferAvailabilityStatus': True,
-          'AuthCodeIsRequired': True,
-          'AuthCodeIsValid': True,
-          'UserTransferRequired': False,
-          'TransferLock': False,
-          'Message': 'Domain can be transferred',
-          'MessageKey': 'TransferAvailable',
-          'Additional': []}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Transferi İptal Etme
-
-Bekleyen bir gelen transferi iptal edin.
-
-```python
-result = dna.cancel_transfer("example.com")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'result': 'OK', 'data': {'DomainName': 'example.com', 'Status': 'Cancelled'}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Giden Transferi Onaylama
-
-Bekleyen bir giden transferi onaylayın.
-
-```python
-result = dna.approve_transfer("example.com")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'result': 'OK', 'data': {'DomainName': 'example.com', 'Status': 'Approved'}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Giden Transferi Reddetme
-
-Bekleyen bir giden transferi reddedin.
-
-```python
-result = dna.reject_transfer("example.com")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'result': 'OK', 'data': {'DomainName': 'example.com', 'Status': 'Rejected'}}
-```
-
-</details>
-
-
-### DNS Zone
-
-Gateway, DNS kayıtlarını **set** olarak saklar: bir ad + tip, bir değerler listesi tutar. Bir ad + tip yazmak
-tüm set'in yerini alır, tek bir değere göre silmek ise tüm set'i kaldırır. `*_record_set` ve
-`*_record_value` metotları bunu sizin için halleder; düşük seviyeli `add/edit/delete_resource_record` yerine bunları tercih edin.
-
-- Adlar `"@"`, `""`, `"www"`, `"www.example.com"` veya `"www.example.com."` biçiminde verilebilir; gateway'in beklediği
-  göreli etiket (relative label) olarak gönderilir. `get_resource_records` tam nitelikli adlar (`"www.example.com."`) döndürür.
-- Desteklenen tipler: `A`, `AAAA`, `ALIAS`, `CAA`, `CNAME`, `DS`, `MX`, `NAPTR`, `PTR`, `SRV`, `TLSA`, `TXT`
-  (diğerleri herhangi bir çağrı yapılmadan reddedilir). TTL 1 ile 86400 saniye arasındadır.
-- Yazma işlemleri hemen uygulanır; birden fazla değişikliği sıraya almak için `apply=False` verin ve sonunda
-  `apply_resource_records` metodunu bir kez çağırın. Otomatik uygulama başarısız olursa metot uygulama hatasını döndürür (değişiklik sırada kalır ama yayında değildir).
-- Gateway, zone çağrılarına hız sınırı (rate limit) uygular; bu yüzden kütüphane zone çağrıları arasında en az bir saniye bırakır
-  (`dna.zone_min_interval`, saniye cinsinden).
-
-
-#### Kayıtları Listeleme
-
-Bir alan adının DNS zone'u; her kayıt değeri için bir satır. Adlar tam nitelikli (FQDN) olarak döner.
-
-```python
-result = dna.get_resource_records("example.com")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'result': 'OK',
- 'data': {'records': [{'Name': 'example.com.',
-                       'Type': 'A',
-                       'TTL': 3600,
-                       'Content': '192.0.2.1',
-                       'Disabled': False},
-                      {'Name': 'www.example.com.',
-                       'Type': 'CNAME',
-                       'TTL': 300,
-                       'Content': 'example.com.',
-                       'Disabled': False},
-                      {'Name': 'example.com.',
-                       'Type': 'MX',
-                       'TTL': 3600,
-                       'Content': '10 mx1.example.com.',
-                       'Disabled': False},
-                      {'Name': 'example.com.',
-                       'Type': 'MX',
-                       'TTL': 3600,
-                       'Content': '20 mx2.example.com.',
-                       'Disabled': True},
-                      {'Name': 'example.com.',
-                       'Type': 'TXT',
-                       'TTL': 3600,
-                       'Content': '"v=spf1 include:_spf.example.net ~all"',
-                       'Disabled': False},
-                      {'Name': 'empty.example.com.',
-                       'Type': 'AAAA',
-                       'TTL': 60,
-                       'Content': '',
-                       'Disabled': False}]}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Kayıt Set'ini Ayarlama
-
-Bir ad + tipin tamamını verilen listeyle birebir aynı hale getirin (gateway'in kendi modeli). Boş liste set'i kaldırır. apply=False verilmedikçe değişiklikler hemen uygulanır.
-
-```python
-result = dna.set_resource_record_set(
+res = client.domains.register_with_contacts(
     "example.com",
-    "@",                                         # apex; "www", "www.example.com" also work
-    "MX",
-    ["10 mx1.example.com", "20 mx2.example.com"],
-    3600,                                        # TTL (1..86400)
+    name_servers=["ns1.example.net", "ns2.example.net"],
+    contacts=owner,  # dört rolün hepsi için tek Contact veya dna.DomainContacts(registrant=owner, admin=admin, ...)
 )
 ```
 
-<details>
-<summary>Örnek çıktı</summary>
+İletişim bilgileri gönderilmeden önce düzenlenir: alanların baş ve sonundaki boşluklar silinir, ülke kodu büyük
+harfe çevrilir ve telefon alanlarında yalnızca rakamlar tutulur (`"+90 (555) 123-45-67"` çalışır). Bazı TLD'ler
+sicil (registry) öznitelikleri ister: bunları `client.products.tld("com.tr").required_attributes` ile bulun ve
+`tld_attributes={...}` olarak iletin.
+
+API yanıt verip isteği reddederse (`"success": false`), metot API'nin mesajını taşıyan `dna.OperationError`
+fırlatır.
+
+### Yenileme, transfer, geri alma
 
 ```python
-{'result': 'OK',
- 'data': {'Name': '',
-          'Type': 'MX',
-          'TTL': 3600,
-          'Contents': ['10 mx1.example.com', '20 mx2.example.com']}}
+check = client.domains.renew_check("example.com", 1)  # check.renewable, check.premium_price
+res = client.domains.renew("example.com", 1)
+
+tc = client.domains.transfer_check("example.com", "auth-code")  # tc.transferable, tc.auth_code_valid
+res = client.domains.transfer("example.com", "auth-code")
+st = client.domains.transfer_status("example.com")
+
+client.domains.restore("example.com")  # itfa (redemption) döneminde
 ```
 
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Tek Değer Ekleme
-
-Bir kayıt set'ine TEK bir değer ekleyin ve mevcut değerleri koruyun (oku-birleştir-yaz). Zaten var olan bir değeri eklemek hiçbir şey yapmaz.
+### Alan adı ayrıntıları ve alan adı listesi
 
 ```python
-result = dna.add_resource_record_value("example.com", "@", "MX", "30 mx3.example.com")
+d = client.domains.info("example.com")
+print(d.status, d.expiration_date, d.remaining_days, d.locked, d.name_servers, d.auth_code)
+owner = d.contact(dna.ContactType.REGISTRANT)
+if owner:
+    print(owner.email)
+
+# Tek sayfa
+page = client.domains.list(limit=50)
+print(page.total_count, [d.domain_name for d in page])
+
+# Tüm alan adları; sayfalar siz üzerinde gezindikçe getirilir
+for d in client.domains.all(statuses=[dna.DomainStatus.ACTIVE]):
+    print(d.domain_name, d.expiration_date)
 ```
 
-<details>
-<summary>Örnek çıktı</summary>
+### Kilit, gizlilik, name server'lar, child name server'lar
 
 ```python
-{'result': 'OK',
- 'data': {'Name': '',
-          'Type': 'MX',
-          'TTL': 3600,
-          'Contents': ['10 mx1.example.com.',
-                       '20 mx2.example.com.',
-                       '30 mx3.example.com']}}
+client.domains.lock("example.com")
+client.domains.unlock("example.com")
+client.domains.set_privacy("example.com", True)
+code = client.domains.update_auth_code("example.com")
+
+client.domains.set_name_servers("example.com", ["ns1.example.net", "ns2.example.net"])
+# dnssec_mode=dna.DNSSECMode.DISABLE  # yalnızca DNSSEC imzalı alan adları için
+
+client.domains.add_host("example.com", "ns1.example.com", ["192.0.2.10", "2001:db8::10"])  # IP sürümü otomatik algılanır
+client.domains.delete_host("example.com", "ns1.example.com")
 ```
 
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Tek Değer Kaldırma
-
-Bir kayıt set'inden TEK bir değeri kaldırın, diğerleri yerinde kalır.
+### Bir alan adının iletişim kayıtları
 
 ```python
-result = dna.remove_resource_record_value("example.com", "@", "MX", "20 mx2.example.com.")
+client.domains.set_contact_handles("example.com", dna.ContactHandles(admin="DNA-2", tech="DNA-2"))
+client.domains.update_contacts("example.com", dna.DomainContacts(billing=billing))
+
+details = client.contacts.get("DNA-1")            # iletişim kaydı ve doğrulama durumu
+result = client.contacts.update("DNA-1", contact)  # handle'ı kullanan tüm alan adlarını günceller
 ```
 
-<details>
-<summary>Örnek çıktı</summary>
+### DNS bölgesi
 
 ```python
-{'result': 'OK',
- 'data': {'Name': '', 'Type': 'MX', 'TTL': 3600, 'Contents': ['10 mx1.example.com.']}}
+client.dns.add("example.com", "www", dna.RecordType.A, "192.0.2.10", ttl=600)
+client.dns.update("example.com", "www", "A", ["192.0.2.20"])  # kümedeki tüm değerleri değiştirir
+client.dns.delete("example.com", "www", "A", "192.0.2.20")
+
+for s in client.dns.list("example.com"):
+    print(s.name, s.type, s.ttl, s.values)
+
+www = client.dns.find("example.com", "www", "A")  # tek bir kayıt kümesi veya None
+res = client.dns.apply("example.com")             # alan adını platformun name server'larına geçirir
 ```
 
-</details>
+İsimler göreli (`www`), kök (`""` veya `"@"`) ya da tam nitelikli olabilir. Kayıt türleri burada büyük/küçük
+harfe duyarsızdır (`"txt"`, `TXT` olarak gönderilir). Doğrulama, API'nin reddedeceği durumları yakalar: kökte
+CNAME, üç parçası olmayan CAA değeri, önceliği olmayan MX değeri. Test ortamı her bölge çağrısına HTTP 500
+yanıtı verir; bu yüzden bölge kodu yalnızca production'da denenebilir.
 
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Tek Değeri Değiştirme
-
-Bir kayıt set'indeki TEK bir değeri başka bir değerle değiştirin (bir DNS panelindeki 'satırı düzenle' işlemi).
+### DNSSEC
 
 ```python
-result = dna.replace_resource_record_value("example.com", "@", "A", "192.0.2.1", "192.0.2.2")
+results = client.dnssec.add("example.com", "2371 13 2 1F987CC6583E92DF0890718C42...")  # DNS sağlayıcınızın gösterdiği haliyle
+info = client.dnssec.get("example.com")  # info.status, info.ds_records
+res = client.dnssec.disable("example.com")
 ```
 
-<details>
-<summary>Örnek çıktı</summary>
+`dna.DS.parse(...)`, tüm bölge dosyası satırları dahil sunum biçimini okur.
+
+### URL yönlendirme
 
 ```python
-{'result': 'OK',
- 'data': {'Name': '', 'Type': 'A', 'TTL': 3600, 'Contents': ['192.0.2.2']}}
+client.domains.set_forwarding("example.com", "https://www.example.org", dna.ForwardType.STANDARD)
+f = client.domains.forwarding("example.com")  # alan adında yönlendirme yoksa None
+client.domains.delete_forwarding("example.com")
 ```
 
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Kayıt Set'ini Silme
-
-Bir ad + tip altındaki tüm değerleri kaldırın. Var olmayan bir set'i kaldırmak da OK döner.
+### Sicil belgeleri (.tr)
 
 ```python
-result = dna.delete_resource_record_set("example.com", "@", "MX")
+doc = dna.DocumentUpload.from_file(dna.DocumentType.IDENTITY_CARD, "id.pdf")
+res = client.domains.upload_documents("example.com.tr", doc)
+page = client.domains.documents("example.com.tr")
 ```
 
-<details>
-<summary>Örnek çıktı</summary>
+Dosyalar sizin için base64 ile kodlanır; biçim (PDF, JPG, PNG, DOC, DOCX, ODT) ve boyut (dosya başına 10 MB,
+istek başına 50 MB) yüklemeden önce kontrol edilir.
+
+### SSL sertifikaları
 
 ```python
-{'result': 'OK',
- 'data': {'Name': 'example.com.', 'Type': 'MX', 'Content': '10 mx1.example.com.'}}
+csr = client.ssl.generate_csr("example.com", country="TR", state="Istanbul", locality="Istanbul",
+                              organization="Example Ltd", organization_unit="IT")
+client.ssl.initialize("example.com", "PositiveSSL")  # bakiyeden ücret keser
+client.ssl.configure("example.com", csr=csr.csr, approver_mail="admin@example.com",
+                     authentication_type=dna.AuthenticationType.EMAIL,
+                     web_server_type=dna.WebServerType.APACHE, contact=ssl_contact)
+st = client.ssl.status("example.com")  # st.is_issued olana kadar sorgulayın
+cert = client.ssl.content("example.com")
+open("example.com.crt", "w").write(cert.chain)
 ```
 
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Kayıt Ekleme (düşük seviye)
-
-Düşük seviye: bir kayıt set'i yazar (POST). Gateway mevcut bir ad + tipin yerine yenisini yazar; bu yüzden değer eklemek için add_resource_record_value() tercih edin.
+### Hosting
 
 ```python
-result = dna.add_resource_record("example.com", "www", "A", "192.0.2.5", 300)
+packages = client.hosting.packages()
+created = client.hosting.create("example.com", "Linux-Starter")  # bakiyeden ücret keser
+
+st = client.hosting.wait(created.service_id, timeout=30 * 60)  # aktif olana kadar sorgular
+print(st.panel_address, st.username, st.password)
 ```
 
-<details>
-<summary>Örnek çıktı</summary>
+Hâlâ hazırlanmakta olan bir hosting için `create` işlevini bir daha çağırmayın: iki kez ücret alınır.
+
+### Bakiye, fiyatlar ve siparişler
 
 ```python
-{'result': 'OK',
- 'data': {'Name': 'www', 'Type': 'A', 'TTL': 300, 'Content': '192.0.2.5'}}
+account = client.account.get()
+usd = account.balance("USD")
+
+for tx in client.account.all_transactions(since=month_start):
+    print(tx.creation_time, tx.type, tx.change)
+
+tld = client.products.tld("com.tr")
+if tld:
+    print(tld.name, tld.register_price(1))
+
+info = client.products.info("com", dna.OrderType.RENEW, 2)  # 2 yıllık .com yenilemesinin fiyatı
+order = client.orders.get("ORDER-CODE")
 ```
 
-</details>
+## API istekleri ve BaseRequest
 
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Kayıt Düzenleme (düşük seviye)
-
-Düşük seviye: mevcut bir kayıt set'ini, mevcut adıyla belirleyerek yeniden yazar (PUT).
+Her API işlemi bir istek sınıfıdır: `DomainInfoRequest`, `DNSAddRequest`, `SSLConfigureRequest`, ... Hepsi
+`dna.BaseRequest`'ten türer; bu sınıf varsayılanları sağlar (sorgu dizesi yok, gövde yok, doğrulanacak bir şey
+yok). Bir istek nereye gideceğini sınıf öznitelikleriyle belirtir ve ihtiyaç duyduklarını geçersiz kılar. Bu
+paketten bir örnek:
 
 ```python
-result = dna.edit_resource_record("example.com", "www", "www", "A", "192.0.2.6", 600)
+@dataclass
+class DomainRenewRequest(BaseRequest):
+    """Renew a domain. Charges your balance. CLI: dna domain renew"""
+
+    method = "POST"
+    path = "/api/v1/domains/renew"
+    safety = Safety.BILLABLE
+    response = DomainOperationResult
+
+    domain_name: str = ""
+    years: int = 0
+
+    def body(self):
+        return domain_body(self.domain_name).set("period", self.years)
+
+    def validate(self, v: Validator) -> None:
+        v.required("domain_name", self.domain_name)
+        v.between("years", self.years, 1, 10, optional=False)
 ```
 
-<details>
-<summary>Örnek çıktı</summary>
+| Üye           | Varsayılan     | Anlamı                                                                              |
+|---------------|----------------|-------------------------------------------------------------------------------------|
+| `method`      | `"GET"`        | HTTP metodu                                                                         |
+| `path`        | `""`           | temel URL'nin altındaki yol; `{placeholders}` özniteliklerden doldurulur ve kaçışlanır |
+| `safety`      | `Safety.READ`  | `READ`, `WRITE`, `DESTRUCTIVE` veya `BILLABLE`                                      |
+| `idempotent`  | `False`        | iki kez göndermek güvenlidir (okumalar her zaman öyledir); ağ hatalarından sonra yalnızca bunlar yeniden denenir |
+| `response`    | `None`         | yanıtların nasıl çözümleneceği: bir `Model` alt sınıfı, `list_of(...)`, `page_of(...)` veya ham JSON |
+| `query()`     | `None`         | sorgu parametreleri: bir dict veya bir çift listesi                                 |
+| `body()`      | `None`         | JSON gövdesi                                                                        |
+| `validate(v)` | hiçbir şey     | sorunları `v.required`, `v.between`, `v.check`, ... ile kaydeder; bu durumda hiçbir şey gönderilmez |
+
+Servis metotları bunları sizin için oluşturur. `client.send(request)`, kendi sınıflarınız dahil herhangi bir
+isteği gönderir; örneğin yalnızca ihtiyacınız olan alanları okumak ya da bu paketin henüz sarmalamadığı bir uç
+noktayı çağırmak için:
 
 ```python
-{'result': 'OK',
- 'data': {'Name': 'www', 'Type': 'A', 'TTL': 600, 'Content': '192.0.2.6'}}
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional
+
+import domainnameapi as dna
+from domainnameapi.model import Model, integer, text, timestamp
+
+@dataclass
+class Expiry(Model):
+    domain_name: str = text("domainName")
+    expiration_date: Optional[datetime] = timestamp("expirationDate")
+    remaining_days: int = integer("remainingDay")
+
+@dataclass
+class ExpiryRequest(dna.BaseRequest):
+    method = "GET"
+    path = "/api/v1/domains/info"
+    safety = dna.Safety.READ
+    response = Expiry
+
+    domain_name: str = ""
+
+    def query(self):
+        return {"DomainName": self.domain_name}
+
+    def validate(self, v):
+        v.required("domain_name", self.domain_name)
+
+expiry = client.send(ExpiryRequest("example.com"))
 ```
 
-</details>
+İsteğiniz, yerleşik isteklerin sahip olduğu her şeye sahip olur: kimlik bilgileri, yeniden denemeler, hız ayarı,
+hata normalleştirme, korelasyon ID'leri, izleme ve salt okunur kısıtlama. `client.send_with_response(request)`
+ayrıca durumu, başlıkları, korelasyon ID'sini, kotayı ve deneme sayısını döndürür; `client.prepare(request)`,
+ücretlendirilen bir isteği gönderilmeden önce loglamak veya gözden geçirmek için tam HTTP isteğini göndermeden
+oluşturur. Modeller, çözümlenmiş JSON'u `.raw` içinde tutar; bu paketin henüz modellemediği alanlar için
+kullanılabilir.
 
+## Hatalar
 
-<hr style="border: 4px solid #000; border-style: dashed;">
+Her istisna `dna.DomainNameAPIError`'dan türer ve bir `kind` değerine sahiptir.
 
-#### Kayıt Silme (düşük seviye)
+| İstisna                       | Ne zaman                                                   | Faydalı öznitelikler                                                |
+|-------------------------------|------------------------------------------------------------|---------------------------------------------------------------------|
+| `InputError` (bir `ValueError`) | doğrulama isteği reddetti; **hiçbir şey gönderilmedi**   | `request`, `fields`                                                 |
+| `APIError` ve alt sınıfları   | API 2xx olmayan bir durum koduyla yanıt verdi              | `status_code`, `code`, `message`, `details`, `fields`, `data`, `correlation_id`, `hint` |
+| `OperationError`              | API 2xx ve `"success": false` ile yanıt verdi              | `code`, `message`, `correlation_id`                                 |
+| `NetworkError`                | istek tamamlanmadı (DNS, TLS, zaman aşımı, bağlantı kopması) | `timeout`, `__cause__`                                            |
+| `ReadOnlyError`               | salt okunur bir istemci bir değişikliği engelledi; hiçbir şey gönderilmedi | `request`, `safety`                                 |
 
-Düşük seviye: ad + değer + tipe göre DELETE. Gateway set'in TAMAMINI kaldırır; bu yüzden tek bir değeri silmek için remove_resource_record_value() tercih edin.
+`APIError` alt sınıfları yaygın durumları birbirinden ayırır: `AuthenticationError`, `NotFoundError`,
+`ValidationError`, `RejectedError` (`InsufficientBalanceError` ile birlikte), `ConflictError`, `RateLimitError`
+ve `ServerError`.
 
 ```python
-result = dna.delete_resource_record("example.com", "www", "192.0.2.5", "A")
+try:
+    client.domains.renew("example.com", 1)
+except dna.InsufficientBalanceError:
+    ...  # önce bakiye yükleyin
+except dna.NotFoundError as err:
+    print(err.hint)
+except dna.OperationError as err:
+    print("refused:", err.message)
+except dna.DomainNameAPIError as err:
+    if err.outcome_unknown:
+        ...  # yenileme gerçekleşmiş olabilir: tekrar denemeden önce alan adını kontrol edin
+    elif err.code == dna.ErrorCode.PRIVACY_NOT_SUPPORTED:
+        ...
+    else:
+        raise
 ```
 
-<details>
-<summary>Örnek çıktı</summary>
+`message` üzerinden değil, `code` üzerinden dallanın: mesajlar yerelleştirilir. API kodları
+`Dna.DomainService:Domain:10007` gibi görünür; [hata başvurusuna](https://www.domainnameapi.com/docs/reference/errors.md) bakın.
+`err.kind` şunlardan biridir: `ErrorKind.AUTH`, `NOT_FOUND`, `VALIDATION`, `REJECTED`, `CONFLICT`, `RATE_LIMITED`,
+`SERVER`, `NETWORK`, `INVALID_INPUT`, `READ_ONLY`. Destekle iletişime geçerken `correlation_id` değerini belirtin.
+
+## Güvenlik ve güvenilirlik
+
+- **Güvenlik sınıfları.** Her istek `READ`, `WRITE`, `DESTRUCTIVE` veya `BILLABLE` sınıfındandır
+  (`request.endpoint().safety`). Bazı POST ve PUT istekleri okumadır (`DomainSearchRequest`, `SSLStatusRequest`).
+- **Salt okunur mod.** `dna.Client(..., read_only=True)`, okuma olmayan her şeyi engeller; raporlama işleri ve
+  production'ı güvenle keşfetmek içindir.
+- **Yeniden denemeler.** 429 yanıtları her zaman, `Retry-After` değerine uyularak yeniden denenir: API bunları
+  herhangi bir işlem yapmadan reddeder. Ağ hataları ve 502/503/504 yalnızca okumalar ve idempotent yazmalar için
+  yeniden denenir; böylece bir kayıt veya yenileme asla iki kez gönderilmez. Ücretlendirilen bir istek
+  başarısız olduktan sonra `err.outcome_unknown` değerini kontrol edin.
+- **Hız ayarı.** İstemci, anahtar başına sınırların altında kalmak için istekleri aralıklandırır (saniyede 5 istek,
+  saniyede 2 arama, saniyede bir bölge çağrısı). Hız ayarını kendiniz yapıyorsanız `pacing=False` ile kapatın.
+- **Kota.** `send_with_response(...).quota`, yumuşak kota başlıklarını sunar. Sınır aşıldığında API yanıtları
+  reddetmek yerine yavaşlatır (en fazla 5 sn); varsayılan 60 sn zaman aşımı buna yer bırakır.
+- **Korelasyon ID'leri.** Her istek bir `X-Correlation-ID` taşır. API çağrılarını loglarınızla ilişkilendirmek için
+  `with dna.correlation_id("order-4711"): ...` ile kendi değerinizi ayarlayın.
+- **Gözlemlenebilirlik.** Alışverişler `domainnameapi` logger'ına loglanır (istekler ve yanıtlar DEBUG,
+  yeniden denemeler WARNING düzeyinde); `trace=callback` size her isteği, yanıtı ve yeniden denemeyi bir
+  `TraceEvent` olarak iletir; metrikler veya hata raporlama için kullanılabilir. API anahtarı bunların hiçbirinde
+  yer almaz.
+- **Thread'ler.** Bir `Client`, thread'ler arasında paylaşılması güvenlidir. Bir tane oluşturun ve yeniden kullanın.
+- **Toleranslı çözümleme.** Saat dilimi olmayan tarihler, `null`, `{}` yerine `[]`, dize olarak gönderilen sayılar,
+  sayısal veya adlandırılmış durumlar ve herhangi bir harf biçimindeki roller (`"registrant"`, `"ADMINISTRATIVE"`)
+  çözümlenir. Bu paketin henüz bilmediği değerler bir yanıtı asla bozmaz.
+
+## Client seçenekleri
+
+| Seçenek                         | Etkisi                                                                                   |
+|---------------------------------|------------------------------------------------------------------------------------------|
+| `environment="ote"`             | test ortamını kullanır (varsayılan `"production"`)                                       |
+| `base_url=url`                  | istekleri bir proxy'ye veya test sunucusuna gönderir                                     |
+| `timeout=60`                    | HTTP denemesi başına saniye                                                              |
+| `retries=2`                     | yeniden deneme sayısı                                                                    |
+| `pacing=False`                  | istemci tarafı hız ayarını kapatır                                                       |
+| `read_only=True`                | okuma olmayan her isteği engeller                                                        |
+| `currency="TRY"`                | arama ve katalog fiyatlarının para birimi                                                |
+| `user_agent="app/1.0"`          | ürününüzü User-Agent'ın başına ekler                                                     |
+| `transport=...`                 | kendi HTTP katmanınız (`requests`, `httpx`, bir proxy, ...); bkz. `domainnameapi.transport` |
+| `trace=fn`                      | her isteği, yanıtı ve yeniden denemeyi gözlemler                                         |
+| `logger=logging.getLogger(...)` | alışverişleri başka bir logger'a loglar                                                  |
+
+Varsayılan transport `urllib` kullanır ve `HTTPS_PROXY` değişkenlerine uyar. Kendi CA paketiniz için
+`transport=dna.UrllibTransport(ssl_context=ctx)` iletin.
+
+## Kodunuzu test etme
+
+`domainnameapi.testing.FakeTransport` istekleri kaydeder ve hazır yanıtlarla cevap verir; başka hiçbir şeyi
+mock'lamanız gerekmez:
 
 ```python
-{'result': 'OK', 'data': {'Name': 'www', 'Type': 'A', 'Content': '192.0.2.5'}}
+from domainnameapi.testing import FakeTransport, api_error, ok
+
+fake = FakeTransport(
+    ok({"success": True, "info": {"domainName": "example.com", "status": "AVAILABLE", "price": 11.99}}),
+    api_error(404, dna.ErrorCode.DOMAIN_NOT_FOUND, "Domain not found"),
+)
+client = fake.client()  # sahte transport'u kullanan, hız ayarı kapalı bir Client
+
+assert client.domains.search("example.com").available
+assert fake.last.json() == {"domainName": "example.com"}
+with pytest.raises(dna.NotFoundError):
+    client.domains.info("missing.com")
 ```
 
-</details>
+## v1'den geçiş
 
+v2 yeni bir tasarımdır: sözlükler yerine tip güvenli sonuçlar, `{"result": "ERROR"}` zarfları yerine
+istisnalar ve php-dna metot kümesi yerine REST API'nin tamamı. Siz geçiş yaparken v1'de kalmak için
+`domainnameapi<2` sürümüne sabitleyin.
 
-<hr style="border: 4px solid #000; border-style: dashed;">
+| v1                                                  | v2                                                                     |
+|-----------------------------------------------------|------------------------------------------------------------------------|
+| `DomainNameAPI(id, key, test_mode=True)`            | `Client(id, key, environment="ote")`                                   |
+| `res["result"] == "OK"`                             | istisna yok                                                            |
+| `get_reseller_details`, `get_current_balance`       | `account.get()` (+ `account.balance("USD")`)                           |
+| `check_availability`                                | `domains.search`, `domains.bulk_search`                                |
+| `get_list`                                          | `domains.list`, `domains.all`                                          |
+| `get_tld_list`                                      | `products.tlds`, `products.all_tlds`, `products.tld`                   |
+| `get_details`, `get_contacts`, `sync_from_registry` | `domains.info`                                                         |
+| `register_with_contact_info`                        | `domains.register_with_contacts` (veya `contacts.create` + `domains.register`) |
+| `renew`, `transfer`, `check_transfer`               | `domains.renew`, `domains.transfer`, `domains.transfer_check`          |
+| `modify_name_server`                                | `domains.set_name_servers`                                             |
+| `enable_theft_protection_lock` / `disable_...`      | `domains.lock` / `domains.unlock`                                      |
+| `modify_privacy_protection_status`                  | `domains.set_privacy`                                                  |
+| `save_contacts`                                     | `domains.update_contacts`, `domains.set_contact_handles`               |
+| `add_child_name_server`, `modify_child_name_server`, `delete_child_name_server` | `domains.add_host`, `domains.update_host`, `domains.delete_host` |
+| `get_resource_records`                              | `dns.list`, `dns.find`                                                 |
+| `add_resource_record`, `add_resource_record_value`  | `dns.add`                                                              |
+| `edit_resource_record`, `set_resource_record_set`, `replace_resource_record_value` | `dns.update`                            |
+| `delete_resource_record`, `remove_resource_record_value`, `delete_resource_record_set` | `dns.delete` (her değer için bir kez) |
+| `apply_resource_records`                            | `dns.apply`                                                            |
+| `get_forwarding`, `set_forwarding`, `delete_forwarding` | `domains.forwarding`, `domains.set_forwarding`, `domains.delete_forwarding` |
+| `cancel_transfer`, `approve_transfer`, `reject_transfer` | yayımlanan API'de yok; hesabınızda varsa [kendi isteğinizi](#api-istekleri-ve-baserequest) gönderin |
+| `is_tr_tld`, `validate_contact`                     | `name.endswith(".tr")`; doğrulama her istekte çalışır                  |
+| `get_request_data`, `get_response_data`, ...        | `trace=`, `domainnameapi` logger'ı, `send_with_response`               |
+| telemetri (`set_error_reporting_enabled`, Sentry)   | kaldırıldı: süreciniz dışına hiçbir şey çıkmaz; `trace` olaylarını kendi raporlama sisteminize iletin |
+| `set_ssl_verification(False)`                       | kendi TLS ayarlarınızla `transport=UrllibTransport(ssl_context=...)`   |
 
-#### Bekleyen Değişiklikleri Uygulama
-
-Sıraya alınmış zone değişikliklerini uygulayın (yalnızca apply=False ile yapılan çağrılardan sonra gereklidir).
-
-```python
-dna.add_resource_record("example.com", "www", "A", "192.0.2.5", 300, False)
-dna.add_resource_record("example.com", "api", "A", "192.0.2.6", 300, False)
-result = dna.apply_resource_records("example.com")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'result': 'OK', 'data': {'DomainName': 'example.com'}}
-```
-
-</details>
-
-
-### URL Yönlendirme
-
-#### Yönlendirmeyi Alma
-
-Bir alan adının URL yönlendirmesi. Hiçbir şey yapılandırılmamışsa Enabled False olur.
-
-```python
-result = dna.get_forwarding("example.com")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'result': 'OK',
- 'data': {'Enabled': True,
-          'RedirectAddress': 'https://www.example.org/landing',
-          'ForwardType': 'Frame'}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Yönlendirme Ayarlama
-
-Alan adını bir URL'ye yönlendirin: 'Standard' (düz yönlendirme) veya 'Frame' (maskeli).
-
-```python
-result = dna.set_forwarding("example.com", "https://www.example.org", "Standard")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'result': 'OK',
- 'data': {'RedirectAddress': 'https://www.example.org', 'ForwardType': 'Standard'}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Yönlendirmeyi Silme
-
-URL yönlendirmesini kaldırın. Hiçbir şey yapılandırılmamışsa Removed False olur (sonuç yine OK).
-
-```python
-result = dna.delete_forwarding("example.com")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'result': 'OK', 'data': {'DomainName': 'example.com', 'Removed': True}}
-```
-
-</details>
-
-
-### Yardımcı Araçlar
-
-#### .tr Alan Adı mı?
-
-Bu bir .tr alan adı mı? Yerel kontrol, ağ çağrısı yapılmaz.
-
-```python
-result = dna.is_tr_tld("example.com.tr")
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-True
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### Kontak Doğrulama
-
-Bir kontağı gateway'in beklediği biçimde tamamlayın ve normalize edin (yerel, ağ çağrısı yok): eksik alanlara yer tutucu değerler atanır, adlardan rakam/noktalama işaretleri temizlenir, telefon numaraları numara + ülke koduna ayrılır, State boşsa City kullanılır.
-
-```python
-result = dna.validate_contact({
-    "FirstName": " Jo ",
-    "Phone": "+1 (202) 555-0100",
-    "Country": "Turkey",
-    "City": "",
-    "Fax": "0090 212 123 45 67",
-})
-```
-
-<details>
-<summary>Örnek çıktı</summary>
-
-```python
-{'FirstName': 'Jo',
- 'Phone': '2025550100',
- 'Country': 'TR',
- 'City': 'ISTANBUL',
- 'Fax': '2121234567',
- 'LastName': 'Isimyok',
- 'AddressLine1': 'Addres yok',
- 'ZipCode': '34000',
- 'PhoneCountryCode': '1',
- 'State': 'ISTANBUL',
- 'FaxCountryCode': '90'}
-```
-
-</details>
-
-
-### Tanılama ve Ayarlar
-
-```python
-dna.get_details("example.com")
-
-dna.get_request_data()           # {'url': ..., 'method': 'GET', 'payload': {...}} of the last call
-dna.get_response_data()          # decoded response body of the last call ({'raw_response': ...} if not JSON)
-dna.get_parsed_response_data()   # body on success, {'Code', 'Message', 'Details'} on failure
-dna.get_response_headers()       # {'url', 'http_code', 'content_type', 'total_time', 'headers'}
-dna.get_last_function()          # 'request:GET domains/info'
-dna.get_service_url()            # 'https://api.domainresellerapi.com/api/v1'
-
-dna.set_service_url("https://ote.domainresellerapi.com/api/v1")
-dna.set_error_reporting_enabled(False)
-dna.set_telemetry_minimal(True)
-dna.set_ssl_verification(True)
-dna.zone_min_interval = 1.0
-```
-
-Constructor'a özel bir HTTP transport (proxy yönetimi, loglama, testler) verilebilir: `domainnameapi.HttpResponse` döndüren
-bir `send(request)` metoduna sahip herhangi bir nesne:
-
-```python
-from domainnameapi import DomainNameAPI, HttpResponse, UrllibTransport
-
-
-class LoggingTransport(UrllibTransport):
-    def send(self, request):
-        print(request.method, request.url)
-        return super().send(request)
-
-
-dna = DomainNameAPI(reseller_id, api_key, transport=LoggingTransport())
-```
-
-## Testler
-
-Test paketi herhangi bir API bilgisine ihtiyaç duymaz ve dışarıya ağ çağrısı yapmaz:
+## Geliştirme
 
 ```bash
-python -m unittest discover -s tests -v
+python -m unittest discover -s tests -v   # veya: python -m pytest
+python -m build                            # sdist ve wheel
 ```
 
-| Test dosyası | Açıklama |
-|-----------|-------------|
-| `tests/test_conformance.py` | php-dna'nın 134 uyumluluk fixture'ının tamamını çalıştırır: kabloya giden istekler aynı, dönüş değerleri aynı |
-| `tests/test_edge_cases.py` | php-dna'dan kaydedilmiş ek uç durumlar (alışılmadık gateway yanıtları ve girdiler) |
-| `tests/test_http.py` | HTTP katmanı: header'lar, query string'ler, JSON gövdeleri, zaman aşımları, yönlendirmeler |
-| `tests/test_errors.py` | Gateway yanıtlarının hata eşlemesi |
-| `tests/test_telemetry.py` | Telemetri içerikleri, kimlik bilgisi maskeleme, devre dışı bırakma (opt-out) |
-| `tests/test_utils.py` | Yardımcı araçlar ve PHP uyumlu değer işleme |
+Testler gerçek API'yi asla çağırmaz. `tests/testdata/openapi.json`, API'nin OpenAPI belgesidir; `dna` CLI'nin
+gömdüğü belgenin aynısıdır. Testler her istek sınıfını bu belgeye göre (metot, yol, sorgu adları, gövde alanları,
+zorunlu alanlar), her yanıt modelinin JSON adlarını yanıt şemalarına göre ve her enum değerini kontrol eder; API,
+istek sınıfı olmayan bir işlem kazandığında başarısız olur. Güncellemek için:
 
-<hr style="border: 4px solid #000; border-style: dashed;">
+```bash
+curl -fsSL -A "python-dna-spec-update" -o tests/testdata/openapi.json https://api.domainresellerapi.com/swagger/v1/swagger.json
+python -m unittest discover -s tests
+```
 
+Bu deponun kuralları için [AGENTS.md](AGENTS.md) dosyasına bakın.
 
-## Dönüş ve Hata Kodları ile Açıklamaları
+## Destek
 
-| Kod | Açıklama | Detay |
-|------|------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1000 | Command completed successfully | İşlem başarılı. |
-| 1001 | Command completed successfully; action pending | İşlem başarılı. Fakat işlem şu an tamamlanmak için kuyruğa alındı. |
-| 2003 | Required parameter missing | Parametre eksik hatası. Örneğin; kontak bilgisinde telefon girişi yapılmaması. |
-| 2105 | Object is not eligible for renewal | Domain durumu yenilemeye müsait değil, güncelleme işlemlerine kilitlenmiştir. Durum "clientupdateprohibited" olmamalıdır. Başka durum koşullarından da kaynaklanabilir. |
-| 2200 | Authentication error | Yetki hatası, güvenlik kodu hatalı veya domain başka bir kayıt firmasında bulunuyor. |
-| 2302 | Object exists | Domain adı veya nameserver bilgisi veritabanında mevcut. Kayıt edilemez. |
-| 2303 | Object does not exist | Domain adı veya nameserver bilgisi veritabanında mevcut değil. Yeni kayıt oluşturulmalı. |
-| 2304 | Object status prohibits operation | Domain durumu güncellemeye müsait değildir, güncelleme işlemlerine kilitlenmiştir. Durum "clientupdateprohibited" olmamalıdır. Başka durum koşullarından da kaynaklanabilir. |
-
-| KOD | DETAY |
-|------|--------------------------------------------------------------------------------------------------------------------------------------|
-| 101  | System Error Detailed For ({0})!                                                                                                     |
-| 102  | Multiple Errors Detailed For ({0})!                                                                                                  |
-| 103  | Unknown Errors Detailed For ({0})!                                                                                                   |
-| 200  | API command not found ({0})!                                                                                                         |
-| 210  | API service not found ({0})!                                                                                                         |
-| 211  | API service provider not set!                                                                                                        |
-| 300  | Reseller not found!                                                                                                                  |
-| 301  | Your current IP address is not authorized to access. Please make sure you are connecting from an authorized IP address and try again |
-| 310  | TLD is not supported!                                                                                                                |
-| 320  | API not found!                                                                                                                       |
-| 321  | Currency is not supported!                                                                                                           |
-| 330  | Required parameter(s) not set ({0}).                                                                                                 |
-| –    | Make sure you send all contact objects full                                                                                          |
-| 340  | Price definition not found ({0}[{1}]-{2}{3}).                                                                                        |
-| 350  | Insufficient reseller balance. (Reseller Id : {0} - Current Balance : {1} {2}).                                                      |
-| 350  | Accounting currency does not match or the balance is not sufficient.                                                                 |
-| 360  | Invalid API request for field ({0}).                                                                                                 |
-| 360  | API quota exceeded!                                                                                                                  |
-| 361  | Throttled error!                                                                                                                     |
-| 362  | Premium domain is not available to register right now.                                                                               |
-| 363  | Operation cancelled because domain in auto-renewal period                                                                            |
-| 364  | This domain is currently unavailable for transaction due to a problem with the registry                                              |
-
-| KOD | DETAY |
-|------|---------------------------------------------------------------------------------------------|
-| 400  | Invalid contact ({0}).                                                                      |
-| 401  | Contact info can not sync.                                                                  |
-| 402  | No access to contact information from registry.                                             |
-| 403  | THE SYSTEM HAS MISSING INFORMATION. ENTER YOUR DEFAULT INFORMATION OR CONTACT SUPPORT TEAM. |
-| 404  | DOMAIN CONTACT CANNOT UPDATE. PERMISSION FROM THE REGISTRY.                                 |
-| 410  | Contact not found.                                                                          |
-| 410  | Contact not found ({0}).                                                                    |
-| 420  | Invalid Api command for contact {0}.                                                        |
-| 430  | Contact api not found.                                                                      |
-| 440  | Contact is not synced.                                                                      |
-| 450  | Too many domain contacts!                                                                   |
-| 451  | Failed to proceed with contact update.                                                      |
-
-| KOD | DETAY |
-|------|--------------------------------------------------------------------------------------------------------------------------------------|
-| 500  | Invalid domain id.                                                                                                                   |
-| 500  | Invalid domain id ({0}).                                                                                                             |
-| 501  | Domain could not synchronized({0})                                                                                                   |
-| 502  | Internal transfer failed                                                                                                             |
-| 503  | Domain registration is not available.                                                                                                |
-| 504  | Domain information does not match. Before :{0}                                                                                       |
-| 505  | Enter the Ip Address.                                                                                                                |
-| 506  | Domain Transfer Has Been Started But Contact Info Not Read.                                                                          |
-| 507  | Authorization error.                                                                                                                 |
-| 510  | Domain not found.                                                                                                                    |
-| 511  | Expired domains cannot be found.                                                                                                     |
-| 512  | Domain is not renewable.                                                                                                             |
-| 513  | Domain is not in updateable status. It must be active for to be updated                                                              |
-| 514  | Redemption Period Expected.                                                                                                          |
-| 520  | Invalid Api command for domain "{0}".                                                                                                |
-| 530  | Invalid domain period. Period must be {0} to {1} years. Requested period is {2} years.                                               |
-| 540  | Domain cannot be extended beyond {0} years from current date.                                                                        |
-| 550  | Invalid domain name. Domain must be {0} to {1} characters length. Requested domain name is {2} characters.                           |
-| 560  | Invalid name server count. Domain must have {0} to {1} name servers. Requested name server count is {2}.                             |
-| 561  | No name server information found in the incoming request                                                                             |
-| 570  | Idn not supported for tld "{0}".                                                                                                     |
-| 571  | Period invalid.                                                                                                                      |
-| 572  | Command invalid.                                                                                                                     |
-| 573  | Domain names not found.                                                                                                              |
-| 574  | TLD names not found.                                                                                                                 |
-| 575  | Domain is not in updateable status. It must be active for name servers to be updated                                                 |
-| 576  | Domain can be renewed in the last 1 month before the expire date                                                                     |
-| 580  | Transfer not supported for tld "{0}".                                                                                                |
-| 581  | Child name server not found                                                                                                          |
-| 582  | Transfer started by other reseller.                                                                                                  |
-| 583  | Transfer not initialized. Please contact the support team.                                                                           |
-| 584  | Object status prohibits operation                                                                                                    |
-| 590  | Auth code is required for this transfer.                                                                                             |
-| 591  | Auth code is not valid.                                                                                                              |
-| 592  | Transfer lock exists on domain.                                                                                                      |
-| 593  | Domain cannot be transferred, Status Information and Transfer Lock must comply with the required criteria. (Status Information: #ok) |
-| 594  | Domain name server address could not resolved ({0})                                                                                  |
-| 595  | Contact information can not be read (whois.registrar.tld) Please make sure that privacy protection status open                       |
-| 596  | Contact information could not verified                                                                                               |
-| 597  | Tld Not Found                                                                                                                        |
-| 598  | Unknown error occurred                                                                                                               |
-| 599  | Domain Forward Not Found                                                                                                             |
-
+- API dokümantasyonu: <https://www.domainnameapi.com/docs/>
+- CLI ve MCP sunucusu: <https://github.com/domainreseller/cli>
+- Web sitesi: <https://www.domainnameapi.com>
 
 ## Lisans
 
-Apache License 2.0 — bkz. [LICENSE](LICENSE).
+Apache License 2.0. [LICENSE](LICENSE) dosyasına bakın.

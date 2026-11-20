@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-11-20
+
+A new SDK, designed for Python and for the REST API instead of ported from php-dna, and modelled on the
+[`dna` CLI](https://github.com/domainreseller/cli) like go-dna and dotnet-dna v2. See "Migrating from v1" in the
+README. pip on Python 3.8 keeps installing 1.x; pin `domainnameapi<2` to stay on v1 elsewhere.
+
+### Added
+
+- All 64 operations of the REST API, grouped like the `dna` CLI: `client.account`, `contacts`, `domains`, `dns`,
+  `dnssec`, `ssl`, `hosting`, `orders` and `products`. New compared to v1: contact handles and verification,
+  registration with handles, renew check, restore, auth code update, registry documents, DNSSEC, SSL
+  certificates, hosting, orders, balance transactions and product prices.
+- Typed results: dataclass models with `datetime` fields, `IntEnum`/`str` enums with the API's names
+  (`DomainStatus.PENDING_DELETE`), and tolerant decoding of the API's quirks: dates without a timezone, `[]`
+  instead of `{}`, numbers sent as strings, numeric or named statuses, roles in any case, unknown values. Every
+  model keeps its JSON in `.raw`.
+- A request class per operation (`DomainRegisterRequest`, `DNSAddRequest`, ...) derived from `BaseRequest`, with
+  a safety class (`READ`, `WRITE`, `DESTRUCTIVE`, `BILLABLE`) and validation that runs before anything is sent.
+  `client.send` sends your own request classes too; `client.send_with_response` adds status, headers,
+  correlation ID, quota and attempts; `client.prepare` previews a request without sending it.
+- `domainnameapi.model`: `Model` and field helpers (`text`, `integer`, `timestamp`, `model_list`, ...) to declare
+  your own response models.
+- Exceptions by meaning: `InputError`, `ReadOnlyError`, `APIError` with `AuthenticationError`, `NotFoundError`,
+  `ValidationError`, `RejectedError`, `InsufficientBalanceError`, `ConflictError`, `RateLimitError`,
+  `ServerError`, plus `OperationError` for `"success": false` and `NetworkError`. Each has a `kind`, a `code`,
+  `outcome_unknown` and `retryable`; `APIError` adds `hint`, `fields`, `data` and `correlation_id`.
+- Iterators over paged lists: `domains.all`, `account.all_transactions`, `products.all_tlds`.
+- `Client.from_env()` with the CLI's environment variables, `read_only=True`, `currency=`, `trace=`, logging to
+  the `domainnameapi` logger, `dna.correlation_id(...)`, `hosting.wait` and `dns.find`.
+- Retries on 429 for every request and on network errors and 502/503/504 only for requests that are safe to
+  repeat; client-side pacing under the rate limits; a client that is safe to share between threads.
+- A pluggable `transport=` (any object with `send(HttpRequest) -> HttpResponse`) and
+  `domainnameapi.testing.FakeTransport` to test your own code without the network.
+- Tests that check every request class, response model and enum against the API's OpenAPI document, and run
+  the examples against a fake API.
+
+### Removed
+
+- The php-dna compatible API: `DomainNameAPI`/`DomainNameApi`, `DNARest`, the dictionary results, the
+  `{"result": "ERROR"}` envelopes, the camelCase aliases and the diagnostics getters (`get_request_data`, ...).
+  Use `trace=`, the `domainnameapi` logger or `send_with_response` instead.
+- Telemetry: the SDK no longer sends anything to Sentry. Forward `trace` events to your own reporting.
+- `cancel_transfer`, `approve_transfer` and `reject_transfer`, which called endpoints that are not part of the
+  published API, and the php-dna conformance fixtures.
+- Python 3.8 support. Python 3.9 or newer is required.
+
 ## [1.0.1] - 2026-11-14
 
 ### Changed
