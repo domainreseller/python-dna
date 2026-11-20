@@ -1,275 +1,675 @@
-"""Public facade: :class:`DomainNameAPI`.
+"""The client: credentials, environments, sending, retries and pacing."""
 
-Port of php-dna ``DomainNameAPI_PHPLibrary``. Authenticates with a Reseller
-ID (UUID) and an API Key and delegates to :class:`~domainnameapi.rest.DNARest`.
-"""
+from __future__ import annotations
 
-import re
+import contextlib
+import contextvars
+import enum
+import json
+import logging
+import os
+import random
+import threading
+import time
+import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Sequence, Union
+from urllib.parse import quote_plus, urlencode, urlsplit
 
-from . import _php as php
-from .rest import DNARest
+from ._version import USER_AGENT
+from .errors import (
+    ConfigurationError,
+    DecodeError,
+    FieldError,
+    InputError,
+    MissingCredentialsError,
+    NetworkError,
+    ReadOnlyError,
+    api_error_from_response,
+)
+from .model import decode_as
+from .request import BaseRequest, Endpoint, Safety, Validator, _plain
+from .transport import HttpRequest, HttpResponse, Transport, TransportError, UrllibTransport
+
+from .account import AccountService
+from .contacts import ContactService
+from .dns import DNSService
+from .dnssec import DNSSECService
+from .domains import DomainService
+from .hosting import HostingService
+from .orders import OrderService
+from .products import ProductService
+from .ssl import SSLService
+
+__all__ = [
+    "ApiResponse",
+    "Client",
+    "ENV_API_KEY",
+    "ENV_BASE_URL",
+    "ENV_ENVIRONMENT",
+    "ENV_RESELLER_ID",
+    "ENV_TEST_MODE",
+    "Environment",
+    "OTE_URL",
+    "PRODUCTION_URL",
+    "PreparedRequest",
+    "Quota",
+    "TraceEvent",
+    "correlation_id",
+]
+
+#: The live environment: real domains, real charges.
+PRODUCTION_URL = "https://api.domainresellerapi.com"
+#: The test environment (Operational Test & Evaluation): its own data and API key.
+OTE_URL = "https://ote.domainresellerapi.com"
+
+# Environment variables read by Client.from_env(); the same ones the dna CLI uses.
+ENV_RESELLER_ID = "DNA_RESELLER_ID"
+ENV_API_KEY = "DNA_API_KEY"
+#: "production" or "ote".
+ENV_ENVIRONMENT = "DNA_ENV"
+#: "true" selects OTE.
+ENV_TEST_MODE = "DNA_TEST_MODE"
+#: Overrides the environment's URL.
+ENV_BASE_URL = "DNA_BASE_URL"
+
+log = logging.getLogger("domainnameapi")
+log.addHandler(logging.NullHandler())
 
 
-def _parse_test_mode(value):
-    """Panels store checkboxes as strings; ``"false"``/``"off"`` must stay off (BUG-10284)."""
-    if isinstance(value, str):
-        return php.filter_bool(php.trim(value))
-    return php.to_bool(value)
+class Environment(str, enum.Enum):
+    """The API deployment a client talks to."""
+
+    #: The live environment (the default).
+    PRODUCTION = "production"
+    #: The test environment. Use your OTE API key with it.
+    OTE = "ote"
+
+    def __str__(self) -> str:
+        return str(self.value)
+
+    @property
+    def base_url(self) -> str:
+        return OTE_URL if self is Environment.OTE else PRODUCTION_URL
+
+    @classmethod
+    def parse(cls, value: Union["Environment", str, bool, None]) -> "Environment":
+        """Accept ``"production"``/``"prod"``/``"live"``, ``"ote"``/``"test"``/``"sandbox"``.
+
+        Test-mode flags as panels and the other DomainNameAPI SDKs store them
+        work too: ``True``, ``"true"``, ``"1"``, ``"on"``, ``"yes"`` mean OTE;
+        ``False``, ``"false"``, ``"0"``, ``"off"``, ``"no"`` mean production.
+        """
+        if isinstance(value, Environment):
+            return value
+        if isinstance(value, bool):
+            return cls.OTE if value else cls.PRODUCTION
+        text = (value or "").strip().lower()
+        if text in ("", "production", "prod", "live", "false", "0", "off", "no"):
+            return cls.PRODUCTION
+        if text in ("ote", "test", "testing", "sandbox", "true", "1", "on", "yes"):
+            return cls.OTE
+        raise ConfigurationError('unknown environment %r (use "production" or "ote")' % value)
 
 
-def _snake_case(name):
-    s = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
-    s = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s)
-    return s.lower()
+# ---------------------------------------------------------------------------
+# Responses and tracing
 
 
-class DomainNameAPI(object):
-    """DomainNameAPI client.
+@dataclass(frozen=True)
+class Quota:
+    """The API's soft-quota headers.
 
-    :param reseller_id: Reseller ID (UUID) from the DomainNameAPI panel, API Settings.
-    :param api_key: API Key from the same page. Panel login credentials do not work.
-    :param test_mode: ``True`` (or ``"true"``, ``"1"``, ``"on"``, ``"yes"``) uses the
-        OTE test environment.
-    :param transport: optional object with ``send(HttpRequest) -> HttpResponse``,
-        replaces the default ``urllib`` transport (proxies, tests).
-    :param sentry_dsn: optional Sentry DSN overriding the built-in telemetry target.
-
-    Every network method returns a ``dict``/``list`` exactly like php-dna and
-    never raises for gateway or network failures: check ``result`` (``'OK'``
-    or ``'ERROR'``) and ``error`` (``Code``, ``Message``, ``Details``).
-    Methods are snake_case (``get_details``); the php-dna camelCase and
-    PascalCase names (``getDetails``, ``GetDetails``) work as aliases.
+    The quota never rejects requests: once ``used`` exceeds ``limit`` the API
+    delays each response (by ``delay`` seconds, at most 5) until points decay
+    by 20% per minute. Lookups cost 1 point, everything else 10.
     """
 
-    def __init__(self, reseller_id="", api_key="", test_mode=False, transport=None, sentry_dsn=None):
-        reseller_id = php.trim(reseller_id)
-        api_key = php.trim(api_key)
-        self._client = DNARest(reseller_id, api_key, _parse_test_mode(test_mode),
-                               transport=transport, sentry_dsn=sentry_dsn)
+    #: The area: domain, contact, ssl, products, order, deposit, hosting.
+    scope: str
+    #: Points this request cost.
+    cost: float
+    #: Points in the bucket after this request.
+    used: float
+    #: Where slowing down starts (200).
+    limit: float
+    #: Seconds this response was held back.
+    delay: float
+    #: Seconds until the bucket is back under the limit.
+    reset: float
 
-    @property
-    def client(self):
-        """The underlying :class:`~domainnameapi.rest.DNARest` instance."""
-        return self._client
+    @classmethod
+    def from_headers(cls, response: HttpResponse) -> Optional["Quota"]:
+        if not response.header("X-Quota-Limit") and not response.header("X-Quota-Used"):
+            return None
 
-    def __getattr__(self, name):
-        # php-dna style names: getDetails / GetDetails -> get_details.
-        if name.startswith("_"):
-            raise AttributeError(name)
-        snake = _snake_case(name)
-        if snake != name and snake in type(self).__dict__:
-            return getattr(self, snake)
-        raise AttributeError("Method %s does not exist" % name)
+        def num(name: str) -> float:
+            try:
+                return float(response.header(name).strip())
+            except ValueError:
+                return 0.0
 
-    # -- account ----------------------------------------------------------
+        return cls(response.header("X-Quota-Scope"), num("X-Quota-Cost"), num("X-Quota-Used"),
+                   num("X-Quota-Limit"), num("X-Quota-Delay"), num("X-Quota-Reset"))
 
-    def get_reseller_details(self):
-        """Reseller account: id, name and balances (USD and TL)."""
-        return self._client.get_reseller_details()
 
-    def get_current_balance(self, currency_id="USD"):
-        """Balance in one currency (``USD``, ``TRY``, ``EUR``, ``GBP``)."""
-        return self._client.get_current_balance(currency_id)
+@dataclass
+class ApiResponse:
+    """A completed exchange: the decoded value plus what the HTTP layer saw."""
 
-    # -- search and lists ---------------------------------------------------
+    #: The decoded result, as ``client.send`` returns it.
+    value: Any
+    #: The HTTP status of the final attempt.
+    status_code: int
+    #: The response headers.
+    headers: Dict[str, str]
+    #: The raw response body.
+    body: bytes
+    #: Identifies the request; quote it when contacting support.
+    correlation_id: str
+    #: The soft-quota state after the request, or ``None``.
+    quota: Optional[Quota]
+    #: Total seconds, including retries and pacing.
+    duration: float
+    #: The number of HTTP attempts.
+    attempts: int
 
-    def check_availability(self, domains, extensions, period, command="create"):
-        """Availability and price of every ``domain.extension`` combination."""
-        return self._client.check_availability(domains, extensions, period, command)
+    def json(self) -> Any:
+        """The response body decoded as JSON (``None`` for an empty body)."""
+        return json.loads(self.body) if self.body.strip() else None
 
-    def get_list(self, extra_parameters=None):
-        """Domains in the account (``PageNumber``/``PageSize``/``OrderColumn``/... filters)."""
-        return self._client.get_list(extra_parameters if extra_parameters is not None else {})
 
-    def get_tld_list(self, count=20):
-        """TLDs with prices per period."""
-        return self._client.get_tld_list(count)
+@dataclass(frozen=True)
+class TraceEvent:
+    """One step of a request, for logging, metrics or error reporting. It never holds the API key."""
 
-    # -- domain -------------------------------------------------------------
+    #: ``"request"`` (an attempt is about to be sent), ``"response"`` (an attempt
+    #: finished, with a status or an error) or ``"retry"`` (the client waits and tries again).
+    kind: str
+    method: str
+    url: str
+    safety: Safety
+    correlation_id: str
+    #: 1-based.
+    attempt: int
+    #: 0 before a response or after a transport error.
+    status_code: int = 0
+    #: Seconds spent on this attempt.
+    duration: float = 0.0
+    #: For ``"retry"``: seconds the client waits.
+    wait: float = 0.0
+    #: The request or response body, truncated to 16 KiB. It can hold contact
+    #: details and auth codes: mask it before storing it.
+    body: bytes = b""
+    quota: Optional[Quota] = None
+    error: Optional[BaseException] = None
 
-    def get_details(self, domain_name):
-        return self._client.get_details(domain_name)
 
-    def sync_from_registry(self, domain_name):
-        return self._client.sync_from_registry(domain_name)
+class PreparedRequest:
+    """A validated request ready to send (see :meth:`Client.prepare`).
 
-    def get_contacts(self, domain_name):
-        return self._client.get_contacts(domain_name)
+    ``headers`` carry your credentials; ``repr`` masks the API key.
+    """
 
-    def save_contacts(self, domain_name, contacts):
-        return self._client.save_contacts(domain_name, contacts)
+    __slots__ = ("request", "method", "url", "path", "headers", "body", "safety", "idempotent")
 
-    def modify_name_server(self, domain_name, name_servers):
-        return self._client.modify_name_server(domain_name, name_servers)
+    def __init__(self, request: BaseRequest, endpoint: Endpoint, url: str, headers: Dict[str, str],
+                 body: Optional[bytes]):
+        self.request = request
+        self.method = endpoint.method
+        self.path = endpoint.path
+        self.url = url
+        self.headers = headers
+        self.body = body
+        self.safety = endpoint.safety
+        self.idempotent = endpoint.idempotent
 
-    def enable_theft_protection_lock(self, domain_name):
-        return self._client.enable_theft_protection_lock(domain_name)
+    def __repr__(self) -> str:
+        return "<PreparedRequest %s %s (%s)>" % (self.method, self.url, self.safety)
 
-    def disable_theft_protection_lock(self, domain_name):
-        return self._client.disable_theft_protection_lock(domain_name)
 
-    def modify_privacy_protection_status(self, domain_name, status, reason="Owner request"):
-        return self._client.modify_privacy_protection_status(domain_name, status, reason)
+_correlation: contextvars.ContextVar[str] = contextvars.ContextVar("domainnameapi_correlation_id", default="")
 
-    def renew(self, domain_name, period):
-        return self._client.renew(domain_name, period)
 
-    def register_with_contact_info(self, domain_name, period, contacts, name_servers=None,
-                                   epp_lock=True, privacy_lock=False, additional_attributes=None):
-        return self._client.register_with_contact_info(
-            domain_name, period, contacts,
-            name_servers if name_servers is not None else [],
-            epp_lock, privacy_lock,
-            additional_attributes if additional_attributes is not None else [],
-        )
+@contextlib.contextmanager
+def correlation_id(value: str) -> Iterator[str]:
+    """Send the requests made inside the block with ``X-Correlation-ID: value``.
 
-    # -- child nameservers --------------------------------------------------
+    Without it the client generates one per request. The API logs it: quote it
+    when contacting support, or use your own to tie API calls to your logs::
 
-    def add_child_name_server(self, domain_name, name_server, ip_address):
-        return self._client.add_child_name_server(domain_name, name_server, ip_address)
+        with dna.correlation_id("order-4711"):
+            client.domains.renew("example.com", 1)
+    """
+    token = _correlation.set((value or "").strip())
+    try:
+        yield value
+    finally:
+        _correlation.reset(token)
 
-    def delete_child_name_server(self, domain_name, name_server):
-        return self._client.delete_child_name_server(domain_name, name_server)
 
-    def modify_child_name_server(self, domain_name, name_server, ip_address):
-        return self._client.modify_child_name_server(domain_name, name_server, ip_address)
+def _request_name(request: Any) -> str:
+    return type(request).__name__ if request is not None else "request"
 
-    # -- transfers ------------------------------------------------------------
 
-    def transfer(self, domain_name, epp_code, period):
-        """Start an incoming transfer with the EPP/auth code.
+def _truncate(body: Optional[bytes]) -> bytes:
+    if not body:
+        return b""
+    limit = 16 << 10
+    return body if len(body) <= limit else body[:limit] + "…(truncated)".encode("utf-8")
 
-        Contacts are never sent (the request carries ``"contacts": []``): the
-        registrar takes them over from the losing registrar.
+
+def _json_default(value: Any) -> Any:
+    if isinstance(value, enum.Enum):
+        return value.value
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if isinstance(value, (set, frozenset, tuple)):
+        return list(value)
+    raise TypeError("%s is not JSON serializable" % type(value).__name__)
+
+
+def _encode_query(query: Any) -> str:
+    if not query:
+        return ""
+    pairs = query.items() if isinstance(query, Mapping) else query
+    out = []
+    for key, value in pairs:
+        if value is None:
+            continue
+        if isinstance(value, (list, tuple)):
+            out.extend((key, _plain(v)) for v in value if v is not None)
+        else:
+            out.append((key, _plain(value)))
+    return urlencode(out, quote_via=quote_plus)
+
+
+def _backoff(attempt: int) -> float:
+    return 0.5 * (2 ** (attempt - 1)) + random.uniform(0, 0.25)
+
+
+def _retry_after(response: HttpResponse, attempt: int) -> float:
+    value = response.header("Retry-After").strip()
+    if value:
+        try:
+            seconds = float(value)
+            if seconds >= 0:
+                return seconds + 0.05
+        except ValueError:
+            try:
+                when = parsedate_to_datetime(value)
+                if when.tzinfo is None:
+                    when = when.replace(tzinfo=timezone.utc)
+                wait = (when - datetime.now(timezone.utc)).total_seconds()
+                if wait > 0:
+                    return wait
+            except (TypeError, ValueError, IndexError):
+                pass
+    return _backoff(attempt)
+
+
+class _Pacer:
+    """Spaces requests per rate-limit class (thread-safe)."""
+
+    def __init__(self, clock: Callable[[], float], sleep: Callable[[float], None]):
+        self._lock = threading.Lock()
+        self._next: Dict[str, float] = {}
+        self._clock = clock
+        self._sleep = sleep
+
+    @staticmethod
+    def pace_class(path: str):
+        p = path.lower()
+        if p.startswith("/api/v1/domains/zones"):
+            return "zones", 1.0
+        if p in ("/api/v1/domains/search", "/api/v1/domains/bulk-search"):
+            return "search", 0.5
+        if p == "/api/v1/domains/info" or p.startswith("/api/v1/products/tlds"):
+            return "", 0.0  # not rate limited
+        return "general", 0.2
+
+    def wait(self, path: str) -> None:
+        cls, gap = self.pace_class(path)
+        if not gap:
+            return
+        with self._lock:
+            now = self._clock()
+            due = max(self._next.get(cls, now), now)
+            self._next[cls] = due + gap
+            if cls == "search":  # searches also count against the overall budget
+                self._next["general"] = max(self._next.get("general", 0.0), due + 0.2)
+        if due > now:
+            self._sleep(due - now)
+
+
+# ---------------------------------------------------------------------------
+# Client
+
+
+class Client:
+    """A client for the DomainNameAPI reseller REST API.
+
+    The services group the operations the same way the ``dna`` CLI groups its
+    commands: ``dna domain info`` is ``client.domains.info``, ``dna dns add``
+    is ``client.dns.add``.
+
+    :param reseller_id: the reseller ID (a UUID) from the reseller panel, API settings.
+    :param api_key: the API key from the same page. Production and OTE have different keys;
+        panel login details do not work.
+    :param environment: ``"production"`` (default) or ``"ote"``, or an :class:`Environment`.
+    :param base_url: a custom base URL (a proxy or a test server); overrides ``environment``.
+    :param timeout: seconds per HTTP attempt (default 60). Keep it well above 5: over the
+        soft quota the API delays responses by up to 5 seconds instead of rejecting them.
+    :param retries: how often a failed request is retried (default 2). 429 answers are always
+        retried; network errors and 502/503/504 only for requests that are safe to repeat.
+    :param pacing: space requests to stay under the rate limits (default ``True``).
+    :param read_only: block every request that would change something.
+    :param currency: currency (``"USD"``, ``"TRY"``) of search and catalogue prices when a call
+        does not name one; without it the API uses the account's currency.
+    :param user_agent: your product, put in front of the User-Agent, e.g. ``"my-panel/1.4"``.
+    :param transport: an object with ``send(HttpRequest) -> HttpResponse``; default
+        :class:`~domainnameapi.transport.UrllibTransport`.
+    :param trace: a callable (or a list of them) called with every :class:`TraceEvent`.
+    :param logger: where exchanges are logged (default the ``"domainnameapi"`` logger):
+        requests and responses at DEBUG, retries at WARNING.
+
+    A client is safe to share between threads. Create one and reuse it: it
+    paces requests across threads.
+    """
+
+    def __init__(
+        self,
+        reseller_id: str,
+        api_key: str,
+        *,
+        environment: Union[Environment, str, bool] = Environment.PRODUCTION,
+        base_url: Optional[str] = None,
+        timeout: float = 60.0,
+        retries: int = 2,
+        pacing: bool = True,
+        read_only: bool = False,
+        currency: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        transport: Optional[Transport] = None,
+        trace: Union[Callable[[TraceEvent], Any], Sequence[Callable[[TraceEvent], Any]], None] = None,
+        logger: Optional[logging.Logger] = None,
+    ):
+        self._reseller_id = (reseller_id or "").strip()
+        self._api_key = (api_key or "").strip()
+        if not self._reseller_id or not self._api_key:
+            raise MissingCredentialsError()
+        self._environment = Environment.parse(environment)
+        self._base_url = self._check_base_url(base_url or self._environment.base_url)
+        if timeout is not None and timeout <= 0:
+            raise ConfigurationError("timeout must be positive")
+        self._timeout = float(timeout or 60.0)
+        self._retries = max(0, int(retries))
+        self._max_wait = 30.0
+        self._read_only = bool(read_only)
+        self._currency = (currency or "").strip().upper()
+        product = (user_agent or "").strip()
+        self._user_agent = product + " " + USER_AGENT if product else USER_AGENT
+        self._transport: Transport = transport if transport is not None else UrllibTransport()
+        if trace is None:
+            self._trace: List[Callable[[TraceEvent], Any]] = []
+        elif callable(trace):
+            self._trace = [trace]
+        else:
+            self._trace = [fn for fn in trace if fn is not None]
+        self._log = logger or log
+        self._clock = time.monotonic
+        self._sleep = time.sleep
+        self._pacer: Optional[_Pacer] = _Pacer(lambda: self._clock(), lambda s: self._sleep(s)) if pacing else None
+
+        #: Balance and balance transactions (``dna account``).
+        self.account = AccountService(self)
+        #: Reusable contact handles (``dna contact``).
+        self.contacts = ContactService(self)
+        #: Search, register, renew, transfer and manage domains (``dna domain``).
+        self.domains = DomainService(self)
+        #: Zone records of domains on the platform nameservers (``dna dns``).
+        self.dns = DNSService(self)
+        #: DS records of domains (``dna dnssec``).
+        self.dnssec = DNSSECService(self)
+        #: SSL certificates (``dna ssl``).
+        self.ssl = SSLService(self)
+        #: Web hosting packages and services (``dna hosting``).
+        self.hosting = HostingService(self)
+        #: Orders and their lines (``dna order``).
+        self.orders = OrderService(self)
+        #: The catalogue and prices of TLDs, SSL and other products (``dna product``).
+        self.products = ProductService(self)
+
+    @classmethod
+    def from_env(cls, **options: Any) -> "Client":
+        """Create a client from the environment variables the ``dna`` CLI uses.
+
+        ``DNA_RESELLER_ID``, ``DNA_API_KEY``, ``DNA_ENV`` (``production`` or
+        ``ote``; or ``DNA_TEST_MODE=true``) and ``DNA_BASE_URL``. Keyword
+        arguments are passed to :class:`Client` and win over the environment.
         """
-        return self._client.transfer(domain_name, epp_code, period)
+        env = os.environ
+        reseller_id = options.pop("reseller_id", None) or env.get(ENV_RESELLER_ID, "")
+        api_key = options.pop("api_key", None) or env.get(ENV_API_KEY, "")
+        if not reseller_id.strip() or not api_key.strip():
+            raise MissingCredentialsError("%s and %s must both be set" % (ENV_RESELLER_ID, ENV_API_KEY))
+        if "environment" not in options:
+            options["environment"] = env.get(ENV_ENVIRONMENT) or env.get(ENV_TEST_MODE) or Environment.PRODUCTION
+        if "base_url" not in options and env.get(ENV_BASE_URL, "").strip():
+            options["base_url"] = env[ENV_BASE_URL]
+        return cls(reseller_id, api_key, **options)
 
-    def cancel_transfer(self, domain_name):
-        return self._client.cancel_transfer(domain_name)
-
-    def approve_transfer(self, domain_name):
-        return self._client.approve_transfer(domain_name)
-
-    def reject_transfer(self, domain_name):
-        return self._client.reject_transfer(domain_name)
-
-    def check_transfer(self, domain_name, auth_code):
-        return self._client.check_transfer(domain_name, auth_code)
-
-    # -- DNS zone -------------------------------------------------------------
-
-    def get_resource_records(self, domain_name):
-        return self._client.get_resource_records(domain_name)
-
-    def add_resource_record(self, domain_name, name, type, content, ttl=3600, apply=True):  # noqa: A002
-        return self._client.add_resource_record(domain_name, name, type, content, ttl, apply)
-
-    def edit_resource_record(self, domain_name, record_name, name, type, content, ttl=3600, apply=True):  # noqa: A002
-        return self._client.edit_resource_record(domain_name, record_name, name, type, content, ttl, apply)
-
-    def delete_resource_record(self, domain_name, name, record, record_type, apply=True):
-        return self._client.delete_resource_record(domain_name, name, record, record_type, apply)
-
-    def apply_resource_records(self, domain_name):
-        return self._client.apply_resource_records(domain_name)
-
-    def set_resource_record_set(self, domain_name, name, type, contents, ttl=3600, apply=True):  # noqa: A002
-        return self._client.set_resource_record_set(domain_name, name, type, contents, ttl, apply)
-
-    def delete_resource_record_set(self, domain_name, name, type, apply=True, known_value=""):  # noqa: A002
-        return self._client.delete_resource_record_set(domain_name, name, type, apply, known_value)
-
-    def add_resource_record_value(self, domain_name, name, type, value, ttl=None, apply=True):  # noqa: A002
-        return self._client.add_resource_record_value(domain_name, name, type, value, ttl, apply)
-
-    def remove_resource_record_value(self, domain_name, name, type, value, apply=True):  # noqa: A002
-        return self._client.remove_resource_record_value(domain_name, name, type, value, apply)
-
-    def replace_resource_record_value(self, domain_name, name, type, old_value, new_value, ttl=None, apply=True):  # noqa: A002
-        return self._client.replace_resource_record_value(domain_name, name, type, old_value, new_value, ttl, apply)
-
-    # -- forwarding -----------------------------------------------------------
-
-    def get_forwarding(self, domain_name):
-        return self._client.get_forwarding(domain_name)
-
-    def set_forwarding(self, domain_name, redirect_address, forward_type="Standard"):
-        """Point the domain at a URL: ``'Standard'`` redirect or ``'Frame'`` (masked)."""
-        return self._client.set_forwarding(domain_name, redirect_address, forward_type)
-
-    def delete_forwarding(self, domain_name):
-        return self._client.delete_forwarding(domain_name)
-
-    # -- utilities (no network) -----------------------------------------------
-
-    def is_tr_tld(self, domain):
-        return self._client.is_tr_tld(domain)
-
-    def validate_contact(self, contact):
-        return self._client.validate_contact(contact)
-
-    # -- diagnostics ----------------------------------------------------------
-
-    def get_request_data(self):
-        return self._client.get_request_data()
-
-    def set_request_data(self, request):
-        self._client.set_request_data(request)
-        return self
-
-    def get_response_data(self):
-        return self._client.get_response_data()
-
-    def set_response_data(self, response):
-        self._client.set_response_data(response)
-        return self
-
-    def get_response_headers(self):
-        return self._client.get_response_headers()
-
-    def set_response_headers(self, headers):
-        self._client.set_response_headers(headers)
-        return self
-
-    def get_parsed_response_data(self):
-        return self._client.get_parsed_response_data()
-
-    def set_parsed_response_data(self, response):
-        self._client.set_parsed_response_data(response)
-        return self
-
-    def get_last_function(self):
-        return self._client.get_last_function()
-
-    def set_last_function(self, function):
-        self._client.set_last_function(function)
-        return self
-
-    def get_service_url(self):
-        return self._client.get_service_url()
-
-    def set_service_url(self, url):
-        self._client.set_service_url(url)
-
-    # -- settings -------------------------------------------------------------
-
-    def set_error_reporting_enabled(self, enabled):
-        """Turn telemetry (error and performance reports) on or off."""
-        self._client.set_error_reporting_enabled(enabled)
-
-    def set_telemetry_minimal(self, minimal):
-        """Send only error code/message, endpoint, timing, versions and reseller ID."""
-        self._client.set_telemetry_minimal(minimal)
-
-    def set_ssl_verification(self, enabled):
-        """TLS certificate verification (on by default; switch off only for an outdated CA bundle)."""
-        self._client.set_ssl_verification(enabled)
+    # -- properties ---------------------------------------------------------
 
     @property
-    def zone_min_interval(self):
-        """Minimum seconds between two DNS zone calls (default 1.0)."""
-        return self._client.zone_min_interval
+    def base_url(self) -> str:
+        """The base URL requests go to."""
+        return self._base_url
 
-    @zone_min_interval.setter
-    def zone_min_interval(self, seconds):
-        self._client.zone_min_interval = float(seconds)
+    @property
+    def environment(self) -> Environment:
+        """OTE when the client talks to the test environment, production otherwise."""
+        return Environment.OTE if self._base_url == OTE_URL else Environment.PRODUCTION
+
+    @property
+    def read_only(self) -> bool:
+        """``True`` when the client blocks everything that is not a read."""
+        return self._read_only
+
+    @property
+    def currency(self) -> str:
+        """The default price currency, or ``""`` for the account's."""
+        return self._currency
+
+    @property
+    def reseller_id(self) -> str:
+        return self._reseller_id
+
+    def __repr__(self) -> str:
+        return "Client(environment=%r, base_url=%r, read_only=%r)" % (
+            str(self.environment), self._base_url, self._read_only)
+
+    def __enter__(self) -> "Client":
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """Close the transport when it has a ``close`` method."""
+        closer = getattr(self._transport, "close", None)
+        if callable(closer):
+            closer()
+
+    @staticmethod
+    def _check_base_url(raw: str) -> str:
+        url = (raw or "").strip().rstrip("/")
+        parts = urlsplit(url)
+        if parts.scheme not in ("http", "https") or not parts.netloc:
+            raise ConfigurationError("invalid base URL %r (want e.g. %s)" % (raw, PRODUCTION_URL))
+        return url
+
+    # -- sending -------------------------------------------------------------
+
+    def prepare(self, request: BaseRequest) -> PreparedRequest:
+        """Validate ``request`` and build what :meth:`send` would send, without sending it.
+
+        Use it to log or review a billable request before it goes out. The
+        result carries your credentials in its headers.
+        """
+        return self._prepare(request, _correlation.get() or uuid.uuid4().hex)
+
+    def _prepare(self, request: BaseRequest, corr_id: str) -> PreparedRequest:
+        if request is None:
+            raise TypeError("request must not be None")
+        name = _request_name(request)
+        ep = request.endpoint()
+        method = (ep.method or "GET").strip().upper()
+        if method not in ("GET", "POST", "PUT", "DELETE", "PATCH"):
+            raise ConfigurationError("%s: unsupported method %r" % (name, ep.method))
+        path = ep.path if ep.path.startswith("/") else "/" + ep.path
+        ep = Endpoint(method, path, ep.safety, ep.idempotent)
+
+        v = Validator()
+        try:
+            request.validate(v)
+        except InputError:
+            raise
+        except ValueError as err:
+            v.add("", str(err))
+        v.raise_if_invalid(name)
+
+        if self._read_only and ep.safety is not Safety.READ:
+            raise ReadOnlyError(name, ep.method, ep.path, ep.safety)
+
+        body_value = request.body()
+        body: Optional[bytes] = None
+        if body_value is not None:
+            try:
+                body = json.dumps(body_value, ensure_ascii=False, separators=(",", ":"),
+                                  default=_json_default).encode("utf-8")
+            except (TypeError, ValueError) as err:
+                raise InputError(name, [FieldError("body", "cannot be encoded as JSON: %s" % err)]) from err
+
+        url = self._base_url + ep.path
+        qs = _encode_query(request.query())
+        if qs:
+            url += "?" + qs
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": self._user_agent,
+            "X-API-KEY": self._api_key,
+            "__reseller": self._reseller_id,
+            "X-Correlation-ID": corr_id,
+        }
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+        return PreparedRequest(request, ep, url, headers, body)
+
+    def send(self, request: BaseRequest) -> Any:
+        """Validate ``request``, send it and return the decoded answer.
+
+        The answer is decoded with the request's ``response`` spec: a model, a
+        list or page of models, or the plain JSON (``dict``, ``list``, ``None``
+        for an empty body). Works for the request classes of this package and
+        for your own :class:`~domainnameapi.BaseRequest` subclasses.
+
+        :raises InputError: validation rejected the request; nothing was sent.
+        :raises ReadOnlyError: the client is read-only; nothing was sent.
+        :raises APIError: the API answered with a non-2xx status (see its subclasses).
+        :raises NetworkError: the request did not complete.
+        """
+        return self.send_with_response(request).value
+
+    def send_with_response(self, request: BaseRequest) -> ApiResponse:
+        """Like :meth:`send`, but return the :class:`ApiResponse` with status, headers,
+        correlation ID, quota, duration and attempts."""
+        corr_id = _correlation.get() or uuid.uuid4().hex
+        prepared = self._prepare(request, corr_id)
+        start = self._clock()
+        attempt = 0
+        while True:
+            attempt += 1
+            if self._pacer is not None:
+                self._pacer.wait(prepared.path)
+            self._emit("request", prepared, corr_id, attempt, body=_truncate(prepared.body))
+            http_request = HttpRequest(prepared.method, prepared.url, dict(prepared.headers), prepared.body,
+                                       self._timeout)
+            t0 = self._clock()
+            try:
+                response = self._transport.send(http_request)
+            except TransportError as err:
+                self._emit("response", prepared, corr_id, attempt, duration=self._clock() - t0, error=err)
+                if prepared.idempotent and err.retryable and attempt <= self._retries:
+                    wait = _backoff(attempt)
+                    self._emit("retry", prepared, corr_id, attempt, wait=wait, error=err)
+                    self._sleep(wait)
+                    continue
+                raise NetworkError(prepared.method, prepared.path, err.message, timeout=err.timeout,
+                                   safety=prepared.safety) from err
+
+            quota = Quota.from_headers(response)
+            self._emit("response", prepared, corr_id, attempt, status=response.status,
+                       duration=self._clock() - t0, body=_truncate(response.body), quota=quota)
+
+            if 200 <= response.status < 300:
+                data = None
+                if response.body.strip():
+                    try:
+                        data = json.loads(response.body.decode("utf-8-sig"))
+                    except ValueError as err:
+                        raise DecodeError(prepared.method, prepared.path, str(err), response.body) from err
+                decode = getattr(request, "decode", None)
+                value = decode(data) if callable(decode) else decode_as(getattr(request, "response", None), data)
+                return ApiResponse(
+                    value=value,
+                    status_code=response.status,
+                    headers=response.headers,
+                    body=response.body,
+                    correlation_id=response.header("X-Correlation-Id") or corr_id,
+                    quota=quota,
+                    duration=self._clock() - start,
+                    attempts=attempt,
+                )
+
+            retry = response.status == 429 or (prepared.idempotent and response.status in (502, 503, 504))
+            if retry and attempt <= self._retries:
+                wait = _retry_after(response, attempt)
+                if wait <= self._max_wait:
+                    self._emit("retry", prepared, corr_id, attempt, status=response.status, wait=wait)
+                    self._sleep(wait)
+                    continue
+            err = api_error_from_response(prepared.method, prepared.path, response.status, response.headers,
+                                          response.body)
+            if not err.correlation_id:
+                err.correlation_id = corr_id
+            raise err
+
+    def _emit(self, kind: str, prepared: PreparedRequest, corr_id: str, attempt: int, *, status: int = 0,
+              duration: float = 0.0, wait: float = 0.0, body: bytes = b"", quota: Optional[Quota] = None,
+              error: Optional[BaseException] = None) -> None:
+        logger = self._log
+        if kind == "retry":
+            logger.warning("dna: retrying %s %s in %.2fs (attempt %d, status %s, error %s, correlation_id %s)",
+                           prepared.method, prepared.url, wait, attempt, status or "-", error or "-", corr_id)
+        elif logger.isEnabledFor(logging.DEBUG):
+            if kind == "request":
+                logger.debug("dna: request %s %s (attempt %d, correlation_id %s)", prepared.method, prepared.url,
+                             attempt, corr_id)
+            elif error is not None:
+                logger.debug("dna: %s %s failed after %.3fs: %s (correlation_id %s)", prepared.method,
+                             prepared.url, duration, error, corr_id)
+            else:
+                logger.debug("dna: response %s %s -> %d in %.3fs (correlation_id %s)", prepared.method,
+                             prepared.url, status, duration, corr_id)
+        if not self._trace:
+            return
+        event = TraceEvent(kind, prepared.method, prepared.url, prepared.safety, corr_id, attempt, status,
+                           duration, wait, body, quota, error)
+        for fn in self._trace:
+            fn(event)
+

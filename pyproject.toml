@@ -5,9 +5,9 @@ build-backend = "hatchling.build"
 [project]
 name = "domainnameapi"
 dynamic = ["version"]
-description = "Python client for the DomainNameAPI (domainnameapi.com) REST API: register, transfer, renew and manage domains, contacts, DNS zones and forwarding."
+description = "Typed Python SDK for the Domain Name API (domainnameapi.com) reseller REST API: domains, DNS, DNSSEC, contacts, SSL, hosting, orders and prices."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Atak Domain" }]
@@ -23,6 +23,10 @@ keywords = [
     "domain-registration",
     "domain-transfer",
     "dns",
+    "dnssec",
+    "ssl",
+    "hosting",
+    "sdk",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -30,12 +34,12 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Internet :: Name Service (DNS)",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
@@ -48,6 +52,7 @@ Source = "https://github.com/domainreseller/python-dna"
 Issues = "https://github.com/domainreseller/python-dna/issues"
 Changelog = "https://github.com/domainreseller/python-dna/blob/main/CHANGELOG.md"
 Releases = "https://github.com/domainreseller/python-dna/releases"
+Documentation = "https://www.domainnameapi.com/docs/"
 
 [tool.hatch.version]
 path = "src/domainnameapi/_version.py"
@@ -62,6 +67,7 @@ include = [
     "examples",
     "README*.md",
     "CHANGELOG.md",
+    "AGENTS.md",
     "LICENSE",
 ]
 
