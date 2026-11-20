@@ -1,7 +1,7 @@
 <div align="center">
-  <a href="README-TR.md"   >   TR <img style="padding-top: 8px" src="https://raw.githubusercontent.com/yammadev/flag-icons/master/png/TR.png" alt="TR" height="20" /></a>
+  <a href="README-TR.md">TR <img style="padding-top: 8px" src="https://raw.githubusercontent.com/yammadev/flag-icons/master/png/TR.png" alt="TR" height="20" /></a>
   <a href="README.md"> | EN <img style="padding-top: 8px" src="https://raw.githubusercontent.com/yammadev/flag-icons/master/png/US.png" alt="EN" height="20" /></a>
-   <a href="README-DE.md"> | DE <img style="padding-top: 8px" src="https://raw.githubusercontent.com/yammadev/flag-icons/master/png/DE.png" alt="DE" height="20" /></a>
+  <a href="README-DE.md"> | DE <img style="padding-top: 8px" src="https://raw.githubusercontent.com/yammadev/flag-icons/master/png/DE.png" alt="DE" height="20" /></a>
   <a href="README-SA.md"> | SA <img style="padding-top: 8px" src="https://raw.githubusercontent.com/yammadev/flag-icons/master/png/SA.png" alt="AR" height="20" /></a>
   <a href="README-NL.md"> | NL <img style="padding-top: 8px" src="https://raw.githubusercontent.com/yammadev/flag-icons/master/png/NL.png" alt="NL" height="20" /></a>
   <a href="README-AZ.md"> | AZ <img style="padding-top: 8px" src="https://raw.githubusercontent.com/yammadev/flag-icons/master/png/AZ.png" alt="AZ" height="20" /></a>
@@ -10,1560 +10,562 @@
   <a href="README-IT.md"> | IT <img style="padding-top: 8px" src="https://raw.githubusercontent.com/yammadev/flag-icons/master/png/IT.png" alt="IT" height="20" /></a>
 </div>
 
+# python-dna：Domain Name API 的 Python SDK
 
-# python-dna：适用于 Python 的 DomainNameAPI 客户端
+[![PyPI](https://img.shields.io/pypi/v/domainnameapi.svg)](https://pypi.org/project/domainnameapi/)
+[![CI](https://github.com/domainreseller/python-dna/actions/workflows/ci.yml/badge.svg)](https://github.com/domainreseller/python-dna/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-适用于 [DomainNameAPI](https://www.domainnameapi.com) 经销商 REST API 的 Python 客户端：查询、注册、转移和续费域名，管理联系人、名称服务器、子名称服务器、DNS 区域和 URL 转发。它是 [php-dna](https://github.com/domainreseller/php-dna) 的忠实移植版本：相同的方法、相同的请求、相同的返回值，并已通过 php-dna 一致性测试用例（conformance fixtures）的验证。
+[Domain Name API](https://www.domainnameapi.com) 经销商 REST API 的带类型 Python 客户端：域名搜索、
+注册、续费与转入、DNS、DNSSEC、联系人、SSL 证书、主机托管、订单、产品
+目录以及账户余额。
 
-## 📦 下载 — 请务必使用 Releases！
+- **全部 64 个 API 操作**，分组方式与 [`dna` CLI](https://github.com/domainreseller/cli) 一致：
+  `dna domain info` 对应 `client.domains.info`，`dna dns add` 对应 `client.dns.add`。
+- **类型化的结果与枚举**：带有 `datetime` 字段和具名状态的 dataclass
+  （`d.status == DomainStatus.PENDING_DELETE`），而不是字典。你的编辑器可以补全每一个字段。
+- **每个操作都是一个请求类**，派生自 `BaseRequest`，并在发送任何内容之前先对自身进行校验。
+  你也可以用同样的方式编写自己的请求。
+- **可按含义捕获的异常**：`NotFoundError`、`InsufficientBalanceError`、`RateLimitError`、
+  `OperationError` 等，并附带错误码、提示和关联 ID。
+- **默认安全**：计费请求绝不会被盲目重试，`read_only=True` 会阻止任何变更，客户端会自行
+  控制请求节奏以遵守速率限制，并且可在线程之间安全共享。
+- **仅依赖标准库。** 需要 Python 3.9 或更高版本。无遥测：除了你发出的 API
+  请求之外，没有任何数据会离开你的进程。
 
-⬇️ **在此获取最新的经过测试的版本：https://github.com/domainreseller/python-dna/releases/latest**
+```python
+import domainnameapi as dna
 
-> ⚠️ 请**不要**使用绿色的 **Code → Download ZIP** 按钮 — 它下载的是未经测试的开发分支。Release 包经过版本管理和测试，可直接用于生产环境。
+client = dna.Client(reseller_id, api_key, environment="ote")
 
-## 安装和集成指南
+result = client.domains.search("example.com")
+if result.available:
+    print(f"{result.domain_name} is available for {result.price:.2f} {result.currency}")
+```
 
-### 最低要求
+## 目录
 
-- Python 3.8 或更高版本（推荐 3.12）
-- 无需第三方包：本库仅使用 Python 标准库（`urllib`、`json`、`ssl`）。
+- [安装](#安装)
+- [凭据与环境](#凭据与环境)
+- [服务](#服务)
+- [用法](#用法)
+- [请求与 BaseRequest](#请求与-baserequest)
+- [错误](#错误)
+- [安全与可靠性](#安全与可靠性)
+- [客户端选项](#客户端选项)
+- [测试你的代码](#测试你的代码)
+- [从 v1 迁移](#从-v1-迁移)
+- [开发](#开发)
 
-### A) 使用 pip 安装
+## 安装
 
 ```bash
 pip install domainnameapi
 ```
 
-### B) 安装 Release 包
-
-从[最新版本](https://github.com/domainreseller/python-dna/releases/latest)下载 wheel 文件（`domainnameapi-1.0.1-py3-none-any.whl`）或源码压缩包，然后进行安装：
+经过版本管理并测试的软件包也可在 [Releases](https://github.com/domainreseller/python-dna/releases)
+页面获取。可运行的程序位于 [examples](examples)：`quickstart.py`、`register.py`、`expiring.py`、
+`dns_zone.py`、`ssl_certificate.py`、`custom_request.py` 和 `error_handling.py`。
 
 ```bash
-pip install domainnameapi-1.0.1-py3-none-any.whl
+python examples/quickstart.py example.com
 ```
 
-### C) 直接使用源码
+## 凭据与环境
 
-将 `src/domainnameapi` 文件夹复制到您的代码旁边（或将 `src` 添加到 `PYTHONPATH`），然后导入即可。[examples](examples) 文件夹中为每个方法都提供了一个可直接运行的脚本。
+你需要从经销商面板（**API settings**）获取两个 API 凭据。面板的登录信息无法使用。
 
-## 🔑 API 凭据 — Reseller ID 与 API Key
+| 凭据        | 形式                                   |
+|-------------|----------------------------------------|
+| Reseller ID | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
+| API key     | 一长串密钥字符串                       |
 
-本库通过 DomainNameAPI REST API 通信，只需向构造函数传入两项凭据：
-
-| 参数 | 值 |
-|---|---|
-| 第一个 | Reseller ID — 形如 `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` 的 UUID |
-| 第二个 | API Key |
-
-> 💡 您可以在 DomainNameAPI 面板的 **API 设置** 中找到您的 **Reseller ID** 和 **API Key**。
-> ⚠️ 这些是 **API 凭据** — 面板登录信息在此**无法使用**。
+共有两个环境。**请先从 OTE 开始**，即测试环境：它有独立的数据和独立的 API key，
+在其中的任何操作都不会产生费用，也不会影响线上域名。
 
 ```python
-from domainnameapi import DomainNameAPI
+# 测试环境 (OTE)
+client = dna.Client(reseller_id, ote_api_key, environment="ote")
 
-reseller_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-api_key = "your-api-key"
-
-# Live environment
-dna = DomainNameAPI(reseller_id, api_key)
-
-# Test (OTE) environment
-dna = DomainNameAPI(reseller_id, api_key, True)
+# 生产环境（默认）：真实注册，真实扣费
+client = dna.Client(reseller_id, api_key)
 ```
 
-凭据前后的空白字符会被自动去除。
+`Client.from_env()` 读取与 `dna` CLI 相同的变量：
 
-## 快速入门
+| 变量              | 含义                                                          |
+|-------------------|---------------------------------------------------------------|
+| `DNA_RESELLER_ID` | 经销商 ID                                                     |
+| `DNA_API_KEY`     | 所选环境的 API key                                            |
+| `DNA_ENV`         | `production`（默认）或 `ote`                                  |
+| `DNA_TEST_MODE`   | `true` 选择 OTE（与其他 DomainNameAPI SDK 一致）              |
+| `DNA_BASE_URL`    | 自定义基础 URL，例如代理                                      |
 
 ```python
-from domainnameapi import DomainNameAPI
-
-dna = DomainNameAPI("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "your-api-key")
-
-details = dna.get_details("example.com")
-if details["result"] == "OK":
-    print(details["data"]["Dates"]["Expiration"])
-else:
-    print(details["error"]["Code"], details["error"]["Message"])
+client = dna.Client.from_env(user_agent="my-panel/1.4")
 ```
 
-方法名采用 snake_case 风格（`get_details`、`register_with_contact_info`）。php-dna 的方法名也可作为别名使用，因此从 PHP 移植过来的代码可以继续使用 `dna.GetDetails(...)` 或 `dna.getDetails(...)`。
+`environment` 也接受面板中保存的测试模式标志：`True`、`"true"`、`"1"`、`"on"`、`"yes"` 均表示 OTE。
+密钥或环境错误时，第一次请求就会失败，抛出 `AuthenticationError` 并附带提示；
+`client.account.get()` 是最省事的检查方式。
 
-## 返回值与错误处理
+## 服务
 
-各方法返回普通的 `dict`/`list` 值，其键与 php-dna 返回的完全一致。对于网关或网络问题，方法**不会**抛出异常；请检查 `result`：
+| 服务              | CLI 分组      | 方法                                                                                                                                                              |
+|-------------------|---------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `client.account`  | `dna account` | `get`, `transactions`, `all_transactions`                                                                                                                         |
+| `client.contacts` | `dna contact` | `get`, `create`, `update`, `verification`, `resend_verification`                                                                                                  |
+| `client.domains`  | `dna domain`  | `search`, `bulk_search`, `list`, `all`, `info`, `register`, `register_with_contacts`, `renew`, `renew_check`, `restore`, `transfer`, `transfer_check`, `transfer_status`, `lock`, `unlock`, `set_privacy`, `update_auth_code`, `set_name_servers`, `add_host`, `update_host`, `delete_host`, `update_contacts`, `set_contact_handles`, `documents`, `upload_documents`, `forwarding`, `set_forwarding`, `delete_forwarding` |
+| `client.dns`      | `dna dns`     | `list`, `find`, `add`, `update`, `delete`, `apply`                                                                                                                |
+| `client.dnssec`   | `dna dnssec`  | `get`, `add`, `remove`, `disable`                                                                                                                                 |
+| `client.ssl`      | `dna ssl`     | `generate_csr`, `check_csr`, `initialize`, `configure`, `status`, `get`, `content`, `reissue`, `approvers`, `revoke`                                              |
+| `client.hosting`  | `dna hosting` | `packages`, `plans`, `create`, `wait`, `get`, `get_by_token`, `status`                                                                                            |
+| `client.orders`   | `dna order`   | `get`                                                                                                                                                             |
+| `client.products` | `dna product` | `list`, `info`, `tlds`, `all_tlds`, `tld`, `ssls`                                                                                                                 |
+
+必需的输入以位置参数传入（`client.domains.info("example.com")`），可选输入以关键字参数传入
+（`client.domains.list(statuses=[DomainStatus.ACTIVE], limit=50)`）。枚举参数接受枚举值本身、
+任意大小写的 API 名称或其编号：`DomainStatus.ACTIVE`、`"active"` 和 `0` 是等价的。
+
+## 用法
+
+以下所有代码片段均假定已有 `import domainnameapi as dna` 和一个 `client`。
+
+### 搜索
 
 ```python
-# Success
-{"result": "OK", "data": {...}}
+a = client.domains.search("example.com")
+# a.available, a.price, a.currency, a.is_premium, a.is_document_required, a.reason
 
-# Failure
-{"result": "ERROR", "error": {"Code": "API_404", "Message": "...", "Details": "...",
-                              "GatewayCode": "Dna.DomainService:Domain:10007"}}
+for r in client.domains.bulk_search(["example.com", "example.net", "example.org"]):
+    print(r.domain_name, r.status, r.price)
 ```
 
-- 对于网关错误，`Code` 为 `API_<HTTP status>`（HTTP 状态码）（`API_400`、`API_404`、`API_429`、`API_500` 等）。重定向响应（凭据错误）会返回 `API_302`，消息为 `Invalid API credentials`。
-- 当网关返回了自己的错误代码（例如 `Dna.DomainService:Domain:10007`）时，`API_<status>` 错误中会额外包含 `GatewayCode`，便于区分“域名未找到”和“不支持该 TLD”等情况。
-- `Message` 为网关返回的消息。错误响应体为空时，会变为 `HTTP <status> - <reason>`（例如 `HTTP 429 - Too Many Requests`）。
-- `Details` 包含网关返回的详细信息（若无则为原始响应正文）；校验错误会被整理成易读的字段列表，例如 `Admin PostalCode, Tech PostalCode - 'PostalCode' is required`。
-- 网络故障同样作为错误返回，绝不会返回空的成功结果：超时返回 `CURL_28`，消息为 `Could not reach the DomainNameAPI service: the connection timed out. (...)`；DNS、连接和 TLS 故障返回 `CURL_6`、`CURL_7`、`CURL_35`/`CURL_60`，消息为 `Curl error during request: ...`（即 curl 错误编号，与 php-dna 报告的代码相同）。 `API_` 代码仅用于 HTTP 状态。
-- 即使网关返回 HTTP 200，拒绝也会作为错误返回：如果注册、转移或续费返回 `success: false`，方法会返回 `REGISTER_DOMAIN`、`TRANSFER_DOMAIN` 或 `RENEW_DOMAIN`，并附带网关的消息。
-- 标志位保留 php-dna 的类型：`LockStatus` 是字符串 `"true"`/`"false"`，价格是格式化后的字符串（`"11.9900"`）。
+`bulk_search` 会把超过 30 个域名的列表拆分为多个请求。价格使用账户的币种，或使用
+`dna.Client(..., currency="TRY")` 或 `search(..., currency="TRY")` 设置的币种。
 
-少数方法使用自己的返回结构，与 php-dna 完全一致：
+### 注册
 
-| 方法 | 成功时 | 失败时 |
-|---|---|---|
-| `check_availability` | 结果组成的普通 `list` | `ERROR` 返回结构 |
-| `get_current_balance` | `OperationResult: "SUCCESS"` | `OperationResult: "FAILED"`，附带 `ErrorCode`（`API_<status>`、`CURL_<errno>`，或账户未提供该货币余额时为 `BALANCE`） |
-| `check_transfer` | 仅当域名可转移时为 `result: "OK"` | `result: "ERROR"`，附带 `data` 和 `error` |
-| `is_tr_tld`、`validate_contact` | 普通值（不访问网络） | — |
-
-只有编程错误（例如在 `set_resource_record_set` 需要列表的地方传入了字符串）才会抛出 Python 异常。
-
-超时时间为每次调用 30 秒、建立连接 10 秒。不会跟随重定向。
-
-## 测试模式（OTE）
-
-将 `True` 作为第三个参数传入即可使用测试环境 `https://ote.domainresellerapi.com/api/v1`。来自配置文件的字符串值也能被识别：`"true"`、`"1"`、`"on"`、`"yes"` 会启用测试模式，其他任何值（`"false"`、`"0"`、`"off"`、`""`）则保持正式环境。
+使用联系人句柄（用 `contacts.create` 创建）：
 
 ```python
-dna = DomainNameAPI(reseller_id, api_key, True)
-dna = DomainNameAPI(reseller_id, api_key, os.environ.get("DNA_TEST_MODE", "false"))
-```
+handle = client.contacts.create(dna.Contact(
+    first_name="Ada", last_name="Lovelace", email="ada@example.com",
+    address="1 Example Street", city="Istanbul", state="Istanbul", postal_code="34000",
+    country="TR", phone_country_code="90", phone="5551234567",
+))
 
-## 错误报告（遥测）
-
-当 API 调用失败时，本库可以向 DomainNameAPI 自己的错误跟踪系统（Sentry）发送一份错误报告。成功调用中会随机抽取一小部分（4%，另外所有耗时超过 1 秒的调用）作为性能记录发送。这有助于 DomainNameAPI 发现并修复问题。错误报告**默认开启**。
-
-报告通过后台线程发送：绝不会拖慢或中断您的调用。预期内的高频错误（域名未找到、余额不足、凭据无效、未配置转发等）永远不会被报告。
-
-**发送的内容：**
-
-- 错误代码和消息
-- 所调用端点的路径和 HTTP 方法
-- 调用耗时
-- 库名称（`DomainNameAPI-Python`）、库版本和 Python 版本
-- 经销商 ID（Reseller ID）和域名
-- 服务器的公网 IP 地址（通过 `api.ipify.org` 获取）以及操作系统用户名
-- API 请求和响应，包括域名的联系人信息；仅凭据会被屏蔽——EPP/授权码、API 密钥、密码和令牌会被替换为 `***`
-
-**绝不发送的内容：** 可读形式的 EPP/授权码、API 密钥、密码或令牌；堆栈跟踪中的函数调用参数。
-
-**用途与保留期限：** 这些数据仅用于使用情况统计和问题的早期诊断，在 DomainNameAPI 自己的 Sentry 服务器上保存 30 天，之后自动删除。
-
-**如何关闭：** 在创建客户端之后调用 `set_error_reporting_enabled(False)`：
-
-```python
-dna = DomainNameAPI(reseller_id, api_key)
-dna.set_error_reporting_enabled(False)
-```
-
-**精简模式：** `set_telemetry_minimal(True)` 仅发送错误代码和消息、端点、耗时、版本信息和经销商 ID——不包含请求/响应数据、域名、IP 地址或用户名。
-
-```python
-dna.set_telemetry_minimal(True)
-```
-
-> 🔒 **安全：** TLS 证书验证默认开启。在 CA 证书包过旧的服务器上，可以通过 `dna.set_ssl_verification(False)` 关闭——不建议这样做；更新 CA 证书包才是更好的解决办法。
-
-## 使用方法
-
-以下所有示例均假定：
-
-```python
-from domainnameapi import DomainNameAPI
-
-dna = DomainNameAPI("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "your-api-key")
-```
-
-示例输出均为本库真实的返回值。
-
-### 账户
-
-#### 获取经销商详细信息
-
-经销商账户详细信息：ID、名称和余额（USD 和 TL）。
-
-```python
-result = dna.get_reseller_details()
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK',
- 'id': '00000000-0000-4000-8000-000000000001',
- 'active': True,
- 'name': 'example-reseller',
- 'balance': '601.64',
- 'currency': 'USD',
- 'symbol': '$',
- 'balances': [{'balance': '601.64', 'currency': 'USD', 'symbol': '$'},
-              {'balance': '1250.50', 'currency': 'TL', 'symbol': 'TL'}]}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 获取当前余额
-
-以单一货币表示的当前余额：USD（默认）或 TRY。账户未提供的货币（EUR、GBP 等）会返回 OperationResult FAILED，ErrorCode 为 BALANCE。
-
-```python
-result = dna.get_current_balance("USD")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'ErrorCode': 0,
- 'OperationMessage': 'Command completed succesfully.',
- 'OperationResult': 'SUCCESS',
- 'Balance': '601.64',
- 'CurrencyId': 2,
- 'CurrencyInfo': None,
- 'CurrencyName': 'USD',
- 'CurrencySymbol': '$'}
-```
-
-</details>
-
-
-### 查询与列表
-
-#### 域名可用性检查
-
-查询每个域名与后缀组合的可用性和价格。成功时返回普通列表，失败时返回错误结构。
-
-```python
-result = dna.check_availability(
-    ["dnaprobexyz123", "google", "premium"],  # names without extension
-    ["com", "net"],                           # extensions
-    1,                                        # period (years)
-    "create",                                 # command: create / renew / transfer
-)
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-[{'TLD': 'com',
-  'DomainName': 'dnaprobexyz123',
-  'Status': 'available',
-  'Command': 'create',
-  'Period': 1,
-  'IsFee': False,
-  'Price': '11.9900',
-  'Currency': 'USD',
-  'Reason': None},
- {'TLD': 'net',
-  'DomainName': 'dnaprobexyz123',
-  'Status': 'available',
-  'Command': 'create',
-  'Period': 1,
-  'IsFee': False,
-  'Price': '13.9900',
-  'Currency': 'USD',
-  'Reason': None},
- {'TLD': 'com',
-  'DomainName': 'google',
-  'Status': 'notavailable',
-  'Command': 'create',
-  'Period': 1,
-  'IsFee': False,
-  'Price': '11.9900',
-  'Currency': 'USD',
-  'Reason': 'Domain exists'},
- {'TLD': 'net',
-  'DomainName': 'premium',
-  'Status': 'available',
-  'Command': 'create',
-  'Period': 1,
-  'IsFee': True,
-  'Price': '2500.0000',
-  'Currency': 'USD',
-  'Reason': None}]
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 域名列表
-
-经销商账户中的域名。筛选条件：PageNumber（从 0 开始）、PageSize、OrderColumn、OrderDirection、DomainName ……
-
-```python
-result = dna.get_list({
-    "PageNumber": 0,
-    "PageSize": 50,
-    "OrderColumn": "ExpirationDate",
-    "OrderDirection": "DESC",
-})
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'data': {'Domains': [{'ID': 11,
-                       'Status': 'ok',
-                       'DomainName': 'example.com',
-                       'AuthCode': '',
-                       'LockStatus': 'true',
-                       'PrivacyProtectionStatus': 'true',
-                       'IsChildNameServer': 'false',
-                       'Contacts': {'Billing': {'ID': ''},
-                                    'Technical': {'ID': ''},
-                                    'Administrative': {'ID': ''},
-                                    'Registrant': {'ID': ''}},
-                       'Dates': {'Start': '2024-03-15T10:20:30',
-                                 'Expiration': '2027-03-15T10:20:30',
-                                 'RemainingDays': 126},
-                       'NameServers': ['ns1.example.net', 'ns2.example.net'],
-                       'Additional': [],
-                       'ChildNameServers': []},
-                      {'ID': 12,
-                       'Status': 'Deleted',
-                       'DomainName': 'example.net',
-                       'AuthCode': '',
-                       'LockStatus': 'false',
-                       'PrivacyProtectionStatus': 'false',
-                       'IsChildNameServer': 'false',
-                       'Contacts': {'Billing': {'ID': ''},
-                                    'Technical': {'ID': ''},
-                                    'Administrative': {'ID': ''},
-                                    'Registrant': {'ID': ''}},
-                       'Dates': {'Start': '2023-01-01T00:00:00',
-                                 'Expiration': '2026-01-01T00:00:00',
-                                 'RemainingDays': 0},
-                       'NameServers': [],
-                       'Additional': [],
-                       'ChildNameServers': []},
-                      {'ID': 13,
-                       'Status': 'WaitingForRegistration',
-                       'DomainName': 'example.org',
-                       'AuthCode': '',
-                       'LockStatus': 'false',
-                       'PrivacyProtectionStatus': 'false',
-                       'IsChildNameServer': 'false',
-                       'Contacts': {'Billing': {'ID': ''},
-                                    'Technical': {'ID': ''},
-                                    'Administrative': {'ID': ''},
-                                    'Registrant': {'ID': ''}},
-                       'Dates': {'Start': '', 'Expiration': '', 'RemainingDays': 0},
-                       'NameServers': [],
-                       'Additional': [],
-                       'ChildNameServers': []}]},
- 'result': 'OK',
- 'TotalCount': 3}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### TLD 列表
-
-TLD 列表，包含各期限的价格（注册、续费、转移、赎回 ……）。
-
-```python
-result = dna.get_tld_list(100)
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'data': [{'id': 1,
-           'status': 'Active',
-           'maxchar': 63,
-           'maxperiod': 10,
-           'minchar': 1,
-           'minperiod': 1,
-           'tld': 'aero',
-           'pricing': {'registration': {'1': '44.9900',
-                                        '2': '94.9100',
-                                        '3': '144.8300'},
-                       'renew': {'1': '49.9200', '2': '99.8400'},
-                       'transfer': {'1': '44.9900'}},
-           'currencies': {'registration': 'USD', 'renew': 'USD', 'transfer': 'USD'}},
-          {'id': 2,
-           'status': 'Passive',
-           'maxchar': 50,
-           'maxperiod': 10,
-           'minchar': 2,
-           'minperiod': 1,
-           'tld': 'com.tr',
-           'pricing': {'registration': {'1': '15.5000', '2': '30.0000'},
-                       'renew': {'1': '15.5000'},
-                       'transfer': {'1': '0.0000'}},
-           'currencies': {'registration': 'TRY', 'renew': 'TRY', 'transfer': 'USD'}},
-          {'id': 3,
-           'status': 'Active',
-           'maxchar': 63,
-           'maxperiod': 10,
-           'minchar': 1,
-           'minperiod': 1,
-           'tld': 'xyz',
-           'pricing': {},
-           'currencies': {}}],
- 'result': 'OK'}
-```
-
-</details>
-
-
-### 域名
-
-#### 域名注册
-
-注册新域名。联系人可以以扁平形式（`AddressLine1`、`Phone` ……）或嵌套形式（`Address.Line1`、`Phone.Phone.Number` ……）提供。缺失的字段会被自动补全，电话号码会被规范化（参见 `validate_contact`）。名称服务器列表为空时，将回退为 `ns1.domainnameapi.com` / `ns2.domainnameapi.com`。
-
-```python
-contact = {
-    "FirstName": "Ahmet",
-    "LastName": "Yilmaz",
-    "Company": "",
-    "EMail": "ahmet.yilmaz@example.com",
-    "AddressLine1": "Ornek Sokak No: 123",
-    "AddressLine2": "Daire 4",
-    "AddressLine3": "",
-    "City": "Istanbul",
-    "Country": "TR",
-    "Fax": "2121234567",
-    "FaxCountryCode": "90",
-    "Phone": "5551234567",
-    "PhoneCountryCode": 90,
-    "Type": "Contact",
-    "ZipCode": "34000",
-    "State": "Istanbul",
-}
-
-contacts = {
-    "Administrative": contact,
-    "Billing": contact,
-    "Technical": contact,
-    "Registrant": contact,
-}
-
-result = dna.register_with_contact_info(
+res = client.domains.register(
     "example.com",
-    1,                                       # period (years)
-    contacts,
-    ["ns1.example.com", "ns2.example.com"],  # empty list -> default nameservers
-    True,                                    # theft protection lock
-    False,                                   # privacy protection
+    years=1,
+    name_servers=["ns1.example.net", "ns2.example.net"],
+    handles=handle,  # 一个句柄用于全部四种角色，或 dna.ContactHandles(registrant="DNA-1", admin="DNA-2", ...)
 )
 ```
 
-<details>
-<summary>示例输出</summary>
+使用内联联系人：
 
 ```python
-{'data': {'ID': 0,
-          'Status': 'Active',
-          'DomainName': '',
-          'AuthCode': '',
-          'LockStatus': 'false',
-          'PrivacyProtectionStatus': 'false',
-          'IsChildNameServer': 'false',
-          'Contacts': {'Billing': {'ID': 0},
-                       'Technical': {'ID': 0},
-                       'Administrative': {'ID': 0},
-                       'Registrant': {'ID': 0}},
-          'Dates': {'Start': '',
-                    'Expiration': '2027-11-09T12:00:00',
-                    'RemainingDays': 366},
-          'NameServers': [],
-          'Additional': [],
-          'ChildNameServers': []},
- 'result': 'OK'}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 域名注册（.tr）
-
-`.tr` 域名需要将 TRABIS 属性作为第 7 个参数传入。个人持有者：`TRABISDOMAINCATEGORY` = `1` 以及 `TRABISCITIZENID`（身份证号码）。企业持有者：`TRABISDOMAINCATEGORY` = `0`、`TRABISTAXOFFICE` 和 `TRABISTAXNUMBER`。旧版键名（`TRABISCITIZIENID`、`TRABISNAMESURNAME`、`TRABISCOUNTRYID` ……）同样可以使用：它们会被转换为 REST 结构，不受支持的键会被丢弃。
-
-```python
-individual = {
-    "TRABISDOMAINCATEGORY": 1,
-    "TRABISCITIZIENID": "11111111111",
-}
-
-commercial = {
-    "TRABISDOMAINCATEGORY": 0,
-    "TRABISTAXOFFICE": "Istanbul VD",
-    "TRABISTAXNUMBER": "1234567890",
-}
-
-result = dna.register_with_contact_info(
-    "example.com.tr",
-    1,
-    contacts,
-    ["ns1.example.com", "ns2.example.com"],
-    True,
-    False,
-    individual,  # or commercial
+res = client.domains.register_with_contacts(
+    "example.com",
+    name_servers=["ns1.example.net", "ns2.example.net"],
+    contacts=owner,  # 一个 Contact 用于全部四种角色，或 dna.DomainContacts(registrant=owner, admin=admin, ...)
 )
 ```
 
-<details>
-<summary>示例输出</summary>
+联系人信息在发送前会先整理：字段会去除首尾空白，国家代码转为大写，电话字段只保留
+数字（`"+90 (555) 123-45-67"` 可以直接使用）。部分 TLD 需要注册局属性：用
+`client.products.tld("com.tr").required_attributes` 查找，并以 `tld_attributes={...}` 传入。
+
+如果 API 有响应但拒绝了请求（`"success": false`），该方法会抛出 `dna.OperationError`，
+其中带有 API 的消息。
+
+### 续费、转入、恢复
 
 ```python
-{'data': {'ID': 0,
-          'Status': 'Active',
-          'DomainName': '',
-          'AuthCode': '',
-          'LockStatus': 'false',
-          'PrivacyProtectionStatus': 'false',
-          'IsChildNameServer': 'false',
-          'Contacts': {'Billing': {'ID': 0},
-                       'Technical': {'ID': 0},
-                       'Administrative': {'ID': 0},
-                       'Registrant': {'ID': 0}},
-          'Dates': {'Start': '',
-                    'Expiration': '2027-11-09T12:00:00',
-                    'RemainingDays': 366},
-          'NameServers': [],
-          'Additional': [],
-          'ChildNameServers': []},
- 'result': 'OK'}
+check = client.domains.renew_check("example.com", 1)  # check.renewable, check.premium_price
+res = client.domains.renew("example.com", 1)
+
+tc = client.domains.transfer_check("example.com", "auth-code")  # tc.transferable, tc.auth_code_valid
+res = client.domains.transfer("example.com", "auth-code")
+st = client.domains.transfer_status("example.com")
+
+client.domains.restore("example.com")  # 在赎回期内
 ```
 
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 域名续费
-
-按指定年数为域名续费。
+### 域名详情与域名列表
 
 ```python
-result = dna.renew("example.com", 1)
+d = client.domains.info("example.com")
+print(d.status, d.expiration_date, d.remaining_days, d.locked, d.name_servers, d.auth_code)
+owner = d.contact(dna.ContactType.REGISTRANT)
+if owner:
+    print(owner.email)
+
+# 单页
+page = client.domains.list(limit=50)
+print(page.total_count, [d.domain_name for d in page])
+
+# 所有域名；分页在你迭代时自动获取
+for d in client.domains.all(statuses=[dna.DomainStatus.ACTIVE]):
+    print(d.domain_name, d.expiration_date)
 ```
 
-<details>
-<summary>示例输出</summary>
+### 锁定、隐私保护、域名服务器、子域名服务器
 
 ```python
-{'result': 'OK', 'data': {'ExpirationDate': '2027-11-09T12:00:00'}}
+client.domains.lock("example.com")
+client.domains.unlock("example.com")
+client.domains.set_privacy("example.com", True)
+code = client.domains.update_auth_code("example.com")
+
+client.domains.set_name_servers("example.com", ["ns1.example.net", "ns2.example.net"])
+# dnssec_mode=dna.DNSSECMode.DISABLE  # 仅适用于已启用 DNSSEC 签名的域名
+
+client.domains.add_host("example.com", "ns1.example.com", ["192.0.2.10", "2001:db8::10"])  # 自动识别 IP 版本
+client.domains.delete_host("example.com", "ns1.example.com")
 ```
 
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 域名详细信息
-
-单个域名的完整信息：状态、日期、名称服务器、锁定/隐私标志、子名称服务器。
+### 域名的联系人
 
 ```python
-result = dna.get_details("example.com")
+client.domains.set_contact_handles("example.com", dna.ContactHandles(admin="DNA-2", tech="DNA-2"))
+client.domains.update_contacts("example.com", dna.DomainContacts(billing=billing))
+
+details = client.contacts.get("DNA-1")            # 联系人及其验证状态
+result = client.contacts.update("DNA-1", contact)  # 更新所有使用该句柄的域名
 ```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'data': {'ID': 4321,
-          'Status': 'Active',
-          'DomainName': 'example.com',
-          'AuthCode': 'Ab1!xyZ9',
-          'LockStatus': 'true',
-          'PrivacyProtectionStatus': 'false',
-          'IsChildNameServer': 'true',
-          'Contacts': {'Billing': {'ID': 'DNA-B-4'},
-                       'Technical': {'ID': 'DNA-T-3'},
-                       'Administrative': {'ID': 'DNA-A-2'},
-                       'Registrant': {'ID': 'DNA-R-1'}},
-          'Dates': {'Start': '2024-03-15T10:20:30',
-                    'Expiration': '2027-03-15T10:20:30',
-                    'RemainingDays': 126},
-          'NameServers': ['ns1.example.net', 'ns2.example.net'],
-          'Additional': {'TRABISDOMAINCATEGORY': '1'},
-          'ChildNameServers': [{'ns': 'ns1.example.com', 'ip': '192.0.2.11'},
-                               {'ns': 'ns2.example.com', 'ip': ''}]},
- 'result': 'OK'}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 从注册局同步
-
-从注册局刷新域名信息（返回结构与 get_details 相同）。
-
-```python
-result = dna.sync_from_registry("example.com")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'data': {'ID': 4321,
-          'Status': 'Active',
-          'DomainName': 'example.com',
-          'AuthCode': 'Ab1!xyZ9',
-          'LockStatus': 'true',
-          'PrivacyProtectionStatus': 'false',
-          'IsChildNameServer': 'true',
-          'Contacts': {'Billing': {'ID': 'DNA-B-4'},
-                       'Technical': {'ID': 'DNA-T-3'},
-                       'Administrative': {'ID': 'DNA-A-2'},
-                       'Registrant': {'ID': 'DNA-R-1'}},
-          'Dates': {'Start': '2024-03-15T10:20:30',
-                    'Expiration': '2027-03-15T10:20:30',
-                    'RemainingDays': 126},
-          'NameServers': ['ns1.example.net', 'ns2.example.net'],
-          'Additional': {'TRABISDOMAINCATEGORY': '1'},
-          'ChildNameServers': [{'ns': 'ns1.example.com', 'ip': '192.0.2.11'},
-                               {'ns': 'ns2.example.com', 'ip': ''}]},
- 'result': 'OK'}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 修改名称服务器
-
-替换域名的名称服务器（各条目会被去除首尾空白、转为小写并去重）。
-
-```python
-result = dna.modify_name_server("example.com", ["ns1.example.net", "ns2.example.net"])
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK', 'data': {'NameServers': ['ns1.example.net', 'ns2.example.net']}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 启用域名锁定
-
-开启注册商锁（防盗保护）。
-
-```python
-result = dna.enable_theft_protection_lock("example.com")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK', 'data': {'LockStatus': True}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 禁用域名锁定
-
-关闭注册商锁（防盗保护）。
-
-```python
-result = dna.disable_theft_protection_lock("example.com")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK', 'data': {'LockStatus': False}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 修改域名隐私保护
-
-开启（True）或关闭（False）WHOIS 隐私保护。1、"1"、"on"、"true" 和 "yes" 也表示开启；其他任何值都表示关闭。reason 参数不会发送给网关。
-
-```python
-result = dna.modify_privacy_protection_status("example.com", True, "Owner request")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'data': {'PrivacyProtectionStatus': True}, 'result': 'OK'}
-```
-
-</details>
-
-
-### 联系人
-
-#### 获取域名联系人
-
-域名的管理（Administrative）、账单（Billing）、注册人（Registrant）和技术（Technical）联系人。
-
-```python
-result = dna.get_contacts("example.com")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'data': {'contacts': {'Administrative': {'ID': 'DNA-A-2',
-                                          'Status': 'Active',
-                                          'AuthCode': '',
-                                          'FirstName': 'Grace',
-                                          'LastName': 'Hopper',
-                                          'Company': '',
-                                          'EMail': 'grace@example.com',
-                                          'Type': 'Administrative',
-                                          'Address': {'Line1': 'Example Street 2',
-                                                      'Line2': '',
-                                                      'Line3': '',
-                                                      'State': 'DC',
-                                                      'City': 'Washington',
-                                                      'Country': 'US',
-                                                      'ZipCode': '20001'},
-                                          'Phone': {'Phone': {'Number': '2025550100',
-                                                              'CountryCode': '1'},
-                                                    'Fax': {'Number': '2025550101',
-                                                            'CountryCode': '1'}},
-                                          'Additional': []},
-                       'Billing': {'ID': 'DNA-B-4',
-                                   'Status': 'Active',
-                                   'AuthCode': '',
-                                   'FirstName': 'Ada',
-                                   'LastName': 'Lovelace',
-                                   'Company': 'Example Ltd',
-                                   'EMail': 'billing@example.com',
-                                   'Type': 'Billing',
-                                   'Address': {'Line1': 'Example Street 1',
-                                               'Line2': '',
-                                               'Line3': '',
-                                               'State': 'Istanbul',
-                                               'City': 'Istanbul',
-                                               'Country': 'TR',
-                                               'ZipCode': '34000'},
-                                   'Phone': {'Phone': {'Number': '5551234567',
-                                                       'CountryCode': '90'},
-                                             'Fax': {'Number': '', 'CountryCode': ''}},
-                                   'Additional': []},
-                       'Registrant': {'ID': 'DNA-R-1',
-                                      'Status': 'Active',
-                                      'AuthCode': '',
-                                      'FirstName': 'Ada',
-                                      'LastName': 'Lovelace',
-                                      'Company': 'Example Ltd',
-                                      'EMail': 'ada@example.com',
-                                      'Type': 'Registrant',
-                                      'Address': {'Line1': 'Example Street 1',
-                                                  'Line2': '',
-                                                  'Line3': '',
-                                                  'State': 'Istanbul',
-                                                  'City': 'Istanbul',
-                                                  'Country': 'TR',
-                                                  'ZipCode': '34000'},
-                                      'Phone': {'Phone': {'Number': '5551234567',
-                                                          'CountryCode': '90'},
-                                                'Fax': {'Number': '',
-                                                        'CountryCode': ''}},
-                                      'Additional': []},
-                       'Technical': {'ID': 'DNA-T-3',
-                                     'Status': 'Active',
-                                     'AuthCode': '',
-                                     'FirstName': 'Alan',
-                                     'LastName': 'Turing',
-                                     'Company': '',
-                                     'EMail': 'alan@example.com',
-                                     'Type': 'Technical',
-                                     'Address': {'Line1': 'Example Street 3',
-                                                 'Line2': '',
-                                                 'Line3': '',
-                                                 'State': '',
-                                                 'City': 'London',
-                                                 'Country': 'GB',
-                                                 'ZipCode': 'SW1A 1AA'},
-                                     'Phone': {'Phone': {'Number': '2071234567',
-                                                         'CountryCode': '44'},
-                                               'Fax': {'Number': '',
-                                                       'CountryCode': ''}},
-                                     'Additional': []}}},
- 'result': 'OK'}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 保存域名联系人
-
-替换域名的四个联系人。`contacts` 与注册示例中的字典相同。
-
-```python
-result = dna.save_contacts("example.com", contacts)
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK', 'data': {'contacts': {}}}
-```
-
-</details>
-
-
-### 子名称服务器
-
-#### 添加子名称服务器
-
-在域名下创建子名称服务器（glue 记录）。
-
-```python
-result = dna.add_child_name_server("example.com", "ns1.example.com", "192.0.2.10")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK',
- 'data': {'NameServer': 'ns1.example.com', 'IPAdresses': ['192.0.2.10']}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 删除子名称服务器
-
-删除子名称服务器。
-
-```python
-result = dna.delete_child_name_server("example.com", "ns1.example.com")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK', 'data': {'NameServer': 'ns1.example.com'}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 修改子名称服务器
-
-修改子名称服务器的 IP 地址。
-
-```python
-result = dna.modify_child_name_server("example.com", "ns1.example.com", "192.0.2.20")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK',
- 'data': {'NameServer': 'ns1.example.com', 'IPAdresses': ['192.0.2.20']}}
-```
-
-</details>
-
-
-### 转移
-
-#### 域名转移
-
-使用域名的 EPP/授权码发起转入。转移时从不发送联系人（请求始终携带 `"contacts": []`）：联系人由注册商从原注册商处接管，因此 `transfer` 没有 contacts 参数。被拒绝（`success: false`）时返回 `TRANSFER_DOMAIN` 错误。
-
-```python
-result = dna.transfer("example.com", "Ab1!xyZ9", 1)
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'data': {'ID': 0,
-          'Status': 'Active',
-          'DomainName': '',
-          'AuthCode': '',
-          'LockStatus': 'false',
-          'PrivacyProtectionStatus': 'false',
-          'IsChildNameServer': 'false',
-          'Contacts': {'Billing': {'ID': 0},
-                       'Technical': {'ID': 0},
-                       'Administrative': {'ID': 0},
-                       'Registrant': {'ID': 0}},
-          'Dates': {'Start': '',
-                    'Expiration': '2027-11-09T12:00:00',
-                    'RemainingDays': 366},
-          'NameServers': [],
-          'Additional': [],
-          'ChildNameServers': []},
- 'result': 'OK'}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 检查转移
-
-该域名能否使用此授权码进行转移？仅当可以转移时 result 才为 OK。
-
-```python
-result = dna.check_transfer("example.com", "Ab1!xyZ9")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK',
- 'data': {'TransferAvailabilityStatus': True,
-          'AuthCodeIsRequired': True,
-          'AuthCodeIsValid': True,
-          'UserTransferRequired': False,
-          'TransferLock': False,
-          'Message': 'Domain can be transferred',
-          'MessageKey': 'TransferAvailable',
-          'Additional': []}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 取消转移
-
-取消待处理的转入。
-
-```python
-result = dna.cancel_transfer("example.com")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK', 'data': {'DomainName': 'example.com', 'Status': 'Cancelled'}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 批准转出
-
-批准待处理的转出。
-
-```python
-result = dna.approve_transfer("example.com")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK', 'data': {'DomainName': 'example.com', 'Status': 'Approved'}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 拒绝转出
-
-拒绝待处理的转出。
-
-```python
-result = dna.reject_transfer("example.com")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK', 'data': {'DomainName': 'example.com', 'Status': 'Rejected'}}
-```
-
-</details>
-
 
 ### DNS 区域
 
-网关以**记录集**（set）的形式存储 DNS 记录：一个名称 + 类型对应一个值列表。写入某个名称 + 类型会替换整个记录集，而按单个值删除会删除整个记录集。`*_record_set` 和 `*_record_value` 方法会替您处理这些细节；请优先使用它们，而不是底层的 `add/edit/delete_resource_record`。
-
-- 名称可以写作 `"@"`、`""`、`"www"`、`"www.example.com"` 或 `"www.example.com."`；它们会以网关所需的相对标签形式发送。`get_resource_records` 返回的是完全限定名称（`"www.example.com."`）。
-- 支持的类型：`A`、`AAAA`、`ALIAS`、`CAA`、`CNAME`、`DS`、`MX`、`NAPTR`、`PTR`、`SRV`、`TLSA`、`TXT`（其他类型会在发起任何调用之前被拒绝）。TTL 为 1 到 86400 秒。
-- 写入操作会立即生效；传入 `apply=False` 可暂存多项更改，然后调用一次 `apply_resource_records`。 如果自动应用失败，方法会返回该应用错误（更改仍处于暂存状态，但未生效）。
-- 网关对区域调用有速率限制，因此本库会让区域调用之间至少间隔一秒（`dna.zone_min_interval`，单位为秒）。
-
-
-#### 列出记录
-
-域名的 DNS 区域，每个记录值占一行。返回的名称为完全限定名称。
-
 ```python
-result = dna.get_resource_records("example.com")
+client.dns.add("example.com", "www", dna.RecordType.A, "192.0.2.10", ttl=600)
+client.dns.update("example.com", "www", "A", ["192.0.2.20"])  # 替换该记录集的所有值
+client.dns.delete("example.com", "www", "A", "192.0.2.20")
+
+for s in client.dns.list("example.com"):
+    print(s.name, s.type, s.ttl, s.values)
+
+www = client.dns.find("example.com", "www", "A")  # 一个记录集，或 None
+res = client.dns.apply("example.com")             # 将域名切换到平台的域名服务器
 ```
 
-<details>
-<summary>示例输出</summary>
+名称可以是相对名称（`www`）、根域（`""` 或 `"@"`）或完全限定名称。此处记录类型不区分
+大小写（`"txt"` 会作为 `TXT` 发送）。校验会拦截 API 会拒绝的内容：根域上的 CNAME、
+不足三个部分的 CAA 值、缺少优先级的 MX 值。测试环境对每个区域调用都返回 HTTP
+500，因此区域相关代码只能在生产环境中试用。
+
+### DNSSEC
 
 ```python
-{'result': 'OK',
- 'data': {'records': [{'Name': 'example.com.',
-                       'Type': 'A',
-                       'TTL': 3600,
-                       'Content': '192.0.2.1',
-                       'Disabled': False},
-                      {'Name': 'www.example.com.',
-                       'Type': 'CNAME',
-                       'TTL': 300,
-                       'Content': 'example.com.',
-                       'Disabled': False},
-                      {'Name': 'example.com.',
-                       'Type': 'MX',
-                       'TTL': 3600,
-                       'Content': '10 mx1.example.com.',
-                       'Disabled': False},
-                      {'Name': 'example.com.',
-                       'Type': 'MX',
-                       'TTL': 3600,
-                       'Content': '20 mx2.example.com.',
-                       'Disabled': True},
-                      {'Name': 'example.com.',
-                       'Type': 'TXT',
-                       'TTL': 3600,
-                       'Content': '"v=spf1 include:_spf.example.net ~all"',
-                       'Disabled': False},
-                      {'Name': 'empty.example.com.',
-                       'Type': 'AAAA',
-                       'TTL': 60,
-                       'Content': '',
-                       'Disabled': False}]}}
+results = client.dnssec.add("example.com", "2371 13 2 1F987CC6583E92DF0890718C42...")  # 与你的 DNS 提供商显示的格式一致
+info = client.dnssec.get("example.com")  # info.status, info.ds_records
+res = client.dnssec.disable("example.com")
 ```
 
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 设置记录集
-
-使某个名称 + 类型与给定列表完全一致（即网关自身的模型）。传入空列表会删除该记录集。除非指定 apply=False，否则更改会立即生效。
-
-```python
-result = dna.set_resource_record_set(
-    "example.com",
-    "@",                                         # apex; "www", "www.example.com" also work
-    "MX",
-    ["10 mx1.example.com", "20 mx2.example.com"],
-    3600,                                        # TTL (1..86400)
-)
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK',
- 'data': {'Name': '',
-          'Type': 'MX',
-          'TTL': 3600,
-          'Contents': ['10 mx1.example.com', '20 mx2.example.com']}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 添加单个值
-
-向记录集中添加一个值，并保留已有的值（读取-合并-写入）。添加已存在的值不会产生任何操作。
-
-```python
-result = dna.add_resource_record_value("example.com", "@", "MX", "30 mx3.example.com")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK',
- 'data': {'Name': '',
-          'Type': 'MX',
-          'TTL': 3600,
-          'Contents': ['10 mx1.example.com.',
-                       '20 mx2.example.com.',
-                       '30 mx3.example.com']}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 删除单个值
-
-从记录集中删除一个值，其他值保持不变。
-
-```python
-result = dna.remove_resource_record_value("example.com", "@", "MX", "20 mx2.example.com.")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK',
- 'data': {'Name': '', 'Type': 'MX', 'TTL': 3600, 'Contents': ['10 mx1.example.com.']}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 替换单个值
-
-将记录集中的一个值替换为另一个值（相当于 DNS 面板中的“编辑行”）。
-
-```python
-result = dna.replace_resource_record_value("example.com", "@", "A", "192.0.2.1", "192.0.2.2")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK',
- 'data': {'Name': '', 'Type': 'A', 'TTL': 3600, 'Contents': ['192.0.2.2']}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 删除记录集
-
-删除某个名称 + 类型下的所有值。删除不存在的记录集也会返回 OK。
-
-```python
-result = dna.delete_resource_record_set("example.com", "@", "MX")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK',
- 'data': {'Name': 'example.com.', 'Type': 'MX', 'Content': '10 mx1.example.com.'}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 添加记录（底层）
-
-底层方法：写入一个记录集（POST）。网关会替换已存在的名称 + 类型，因此如需追加值，请优先使用 add_resource_record_value()。
-
-```python
-result = dna.add_resource_record("example.com", "www", "A", "192.0.2.5", 300)
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK',
- 'data': {'Name': 'www', 'Type': 'A', 'TTL': 300, 'Content': '192.0.2.5'}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 编辑记录（底层）
-
-底层方法：重写一个已有的记录集（PUT），通过其当前名称来定位。
-
-```python
-result = dna.edit_resource_record("example.com", "www", "www", "A", "192.0.2.6", 600)
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK',
- 'data': {'Name': 'www', 'Type': 'A', 'TTL': 600, 'Content': '192.0.2.6'}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 删除记录（底层）
-
-底层方法：按名称 + 值 + 类型执行 DELETE。网关会删除**整个**记录集，因此如需删除单个值，请优先使用 remove_resource_record_value()。
-
-```python
-result = dna.delete_resource_record("example.com", "www", "192.0.2.5", "A")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK', 'data': {'Name': 'www', 'Type': 'A', 'Content': '192.0.2.5'}}
-```
-
-</details>
-
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 应用暂存的更改
-
-提交暂存的区域更改（仅在使用 apply=False 进行调用后才需要）。
-
-```python
-dna.add_resource_record("example.com", "www", "A", "192.0.2.5", 300, False)
-dna.add_resource_record("example.com", "api", "A", "192.0.2.6", 300, False)
-result = dna.apply_resource_records("example.com")
-```
-
-<details>
-<summary>示例输出</summary>
-
-```python
-{'result': 'OK', 'data': {'DomainName': 'example.com'}}
-```
-
-</details>
-
+`dna.DS.parse(...)` 可解析呈现格式，包括整行的区域文件记录。
 
 ### URL 转发
 
-#### 获取转发设置
-
-域名的 URL 转发。未进行任何配置时，Enabled 为 False。
-
 ```python
-result = dna.get_forwarding("example.com")
+client.domains.set_forwarding("example.com", "https://www.example.org", dna.ForwardType.STANDARD)
+f = client.domains.forwarding("example.com")  # 域名没有转发时为 None
+client.domains.delete_forwarding("example.com")
 ```
 
-<details>
-<summary>示例输出</summary>
+### 注册局文档 (.tr)
 
 ```python
-{'result': 'OK',
- 'data': {'Enabled': True,
-          'RedirectAddress': 'https://www.example.org/landing',
-          'ForwardType': 'Frame'}}
+doc = dna.DocumentUpload.from_file(dna.DocumentType.IDENTITY_CARD, "id.pdf")
+res = client.domains.upload_documents("example.com.tr", doc)
+page = client.domains.documents("example.com.tr")
 ```
 
-</details>
+文件会自动进行 base64 编码；上传前会检查格式（PDF、JPG、PNG、DOC、DOCX、ODT）和大小（每个文件 10 MB，每次
+请求 50 MB）。
 
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 设置转发
-
-将域名转发到某个 URL：'Standard'（普通重定向）或 'Frame'（隐藏式转发）。
+### SSL 证书
 
 ```python
-result = dna.set_forwarding("example.com", "https://www.example.org", "Standard")
+csr = client.ssl.generate_csr("example.com", country="TR", state="Istanbul", locality="Istanbul",
+                              organization="Example Ltd", organization_unit="IT")
+client.ssl.initialize("example.com", "PositiveSSL")  # 从余额中扣费
+client.ssl.configure("example.com", csr=csr.csr, approver_mail="admin@example.com",
+                     authentication_type=dna.AuthenticationType.EMAIL,
+                     web_server_type=dna.WebServerType.APACHE, contact=ssl_contact)
+st = client.ssl.status("example.com")  # 轮询直到 st.is_issued
+cert = client.ssl.content("example.com")
+open("example.com.crt", "w").write(cert.chain)
 ```
 
-<details>
-<summary>示例输出</summary>
+### 主机托管
 
 ```python
-{'result': 'OK',
- 'data': {'RedirectAddress': 'https://www.example.org', 'ForwardType': 'Standard'}}
+packages = client.hosting.packages()
+created = client.hosting.create("example.com", "Linux-Starter")  # 从余额中扣费
+
+st = client.hosting.wait(created.service_id, timeout=30 * 60)  # 轮询直到激活
+print(st.panel_address, st.username, st.password)
 ```
 
-</details>
+对于仍在开通中的主机托管，切勿再次调用 `create`：这会重复扣费。
 
-
-<hr style="border: 4px solid #000; border-style: dashed;">
-
-#### 删除转发
-
-删除 URL 转发。如果原本未配置任何转发，Removed 为 False（结果仍为 OK）。
+### 余额、价格与订单
 
 ```python
-result = dna.delete_forwarding("example.com")
+account = client.account.get()
+usd = account.balance("USD")
+
+for tx in client.account.all_transactions(since=month_start):
+    print(tx.creation_time, tx.type, tx.change)
+
+tld = client.products.tld("com.tr")
+if tld:
+    print(tld.name, tld.register_price(1))
+
+info = client.products.info("com", dna.OrderType.RENEW, 2)  # .com 续费 2 年的价格
+order = client.orders.get("ORDER-CODE")
 ```
 
-<details>
-<summary>示例输出</summary>
+## 请求与 BaseRequest
+
+每个 API 操作都是一个请求类：`DomainInfoRequest`、`DNSAddRequest`、`SSLConfigureRequest` 等。它们
+都派生自 `dna.BaseRequest`，后者提供默认实现（无查询字符串、无请求体、无需校验）。
+请求通过类属性声明自己要发往何处，并按需覆盖其他成员。本包中的一个请求如下所示：
 
 ```python
-{'result': 'OK', 'data': {'DomainName': 'example.com', 'Removed': True}}
+@dataclass
+class DomainRenewRequest(BaseRequest):
+    """Renew a domain. Charges your balance. CLI: dna domain renew"""
+
+    method = "POST"
+    path = "/api/v1/domains/renew"
+    safety = Safety.BILLABLE
+    response = DomainOperationResult
+
+    domain_name: str = ""
+    years: int = 0
+
+    def body(self):
+        return domain_body(self.domain_name).set("period", self.years)
+
+    def validate(self, v: Validator) -> None:
+        v.required("domain_name", self.domain_name)
+        v.between("years", self.years, 1, 10, optional=False)
 ```
 
-</details>
+| 成员          | 默认值         | 含义                                                                                |
+|---------------|----------------|-------------------------------------------------------------------------------------|
+| `method`      | `"GET"`        | HTTP 方法                                                                           |
+| `path`        | `""`           | 基础 URL 之下的路径；`{placeholders}` 由属性填充并经过转义                          |
+| `safety`      | `Safety.READ`  | `READ`、`WRITE`、`DESTRUCTIVE` 或 `BILLABLE`                                        |
+| `idempotent`  | `False`        | 可安全发送两次（读取操作始终如此）；只有这类请求会在网络错误后重试                  |
+| `response`    | `None`         | 响应的解码方式：`Model` 子类、`list_of(...)`、`page_of(...)` 或原始 JSON            |
+| `query()`     | `None`         | 查询参数：字典或键值对列表                                                          |
+| `body()`      | `None`         | JSON 请求体                                                                         |
+| `validate(v)` | 无             | 用 `v.required`、`v.between`、`v.check` 等记录问题；一旦有问题就不会发送任何内容    |
 
-
-### 实用工具
-
-#### 是否为 .tr 域名
-
-这是 .tr 域名吗？本地检查，不发起网络调用。
+服务方法会为你构建这些请求。`client.send(request)` 可以发送任何请求，包括你自己的类，例如
+只读取所需的字段，或调用本包尚未封装的端点：
 
 ```python
-result = dna.is_tr_tld("example.com.tr")
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional
+
+import domainnameapi as dna
+from domainnameapi.model import Model, integer, text, timestamp
+
+@dataclass
+class Expiry(Model):
+    domain_name: str = text("domainName")
+    expiration_date: Optional[datetime] = timestamp("expirationDate")
+    remaining_days: int = integer("remainingDay")
+
+@dataclass
+class ExpiryRequest(dna.BaseRequest):
+    method = "GET"
+    path = "/api/v1/domains/info"
+    safety = dna.Safety.READ
+    response = Expiry
+
+    domain_name: str = ""
+
+    def query(self):
+        return {"DomainName": self.domain_name}
+
+    def validate(self, v):
+        v.required("domain_name", self.domain_name)
+
+expiry = client.send(ExpiryRequest("example.com"))
 ```
 
-<details>
-<summary>示例输出</summary>
+你的请求享有内置请求的全部能力：凭据、重试、节奏控制、错误规范化、
+关联 ID、追踪以及只读强制。`client.send_with_response(request)` 还会返回状态码、
+响应头、关联 ID、配额和尝试次数；`client.prepare(request)` 会构建出确切的 HTTP
+请求但不发送，便于在计费请求发出之前记录或审查。模型会把解码后的 JSON 保留在 `.raw` 中，
+供本包尚未建模的字段使用。
+
+## 错误
+
+所有异常都派生自 `dna.DomainNameAPIError`，并带有 `kind`。
+
+| 异常                          | 触发时机                                                   | 常用属性                                                            |
+|-------------------------------|------------------------------------------------------------|---------------------------------------------------------------------|
+| `InputError`（一种 `ValueError`） | 校验拒绝了请求；**没有发送任何内容**                       | `request`, `fields`                                                 |
+| `APIError` 及其子类           | API 返回了非 2xx 状态码                                    | `status_code`, `code`, `message`, `details`, `fields`, `data`, `correlation_id`, `hint` |
+| `OperationError`              | API 返回 2xx，但带有 `"success": false`                    | `code`, `message`, `correlation_id`                                 |
+| `NetworkError`                | 请求未完成（DNS、TLS、超时、连接重置）                     | `timeout`, `__cause__`                                              |
+| `ReadOnlyError`               | 只读客户端阻止了变更；没有发送任何内容                     | `request`, `safety`                                                 |
+
+`APIError` 的子类可区分常见情形：`AuthenticationError`、`NotFoundError`、
+`ValidationError`、`RejectedError`（含 `InsufficientBalanceError`）、`ConflictError`、`RateLimitError` 和
+`ServerError`。
 
 ```python
-True
+try:
+    client.domains.renew("example.com", 1)
+except dna.InsufficientBalanceError:
+    ...  # 先充值
+except dna.NotFoundError as err:
+    print(err.hint)
+except dna.OperationError as err:
+    print("refused:", err.message)
+except dna.DomainNameAPIError as err:
+    if err.outcome_unknown:
+        ...  # 续费可能已经成功：再次尝试之前先检查该域名
+    elif err.code == dna.ErrorCode.PRIVACY_NOT_SUPPORTED:
+        ...
+    else:
+        raise
 ```
 
-</details>
+请根据 `code` 而不是 `message` 来分支处理：消息是本地化的。API 错误码形如
+`Dna.DomainService:Domain:10007`；参见[错误参考](https://www.domainnameapi.com/docs/reference/errors.md)。
+`err.kind` 是 `ErrorKind.AUTH`、`NOT_FOUND`、`VALIDATION`、`REJECTED`、`CONFLICT`、`RATE_LIMITED`、
+`SERVER`、`NETWORK`、`INVALID_INPUT`、`READ_ONLY` 之一。联系支持团队时请提供 `correlation_id`。
 
+## 安全与可靠性
 
-<hr style="border: 4px solid #000; border-style: dashed;">
+- **安全级别。** 每个请求都属于 `READ`、`WRITE`、`DESTRUCTIVE` 或 `BILLABLE`
+  （`request.endpoint().safety`）。部分 POST 和 PUT 请求实际上是读取操作（`DomainSearchRequest`、`SSLStatusRequest`）。
+- **只读模式。** `dna.Client(..., read_only=True)` 会阻止所有非读取操作，适用于报表任务，也适合
+  安全地探索生产环境。
+- **重试。** 429 响应总是会被重试，并遵循 `Retry-After`：API 在处理任何内容之前就拒绝了这类请求。
+  网络错误和 502/503/504 仅对读取操作和幂等的写入操作重试，因此注册
+  或续费绝不会被发送两次。计费请求失败后，请检查 `err.outcome_unknown`。
+- **节奏控制。** 客户端会控制请求间隔，使其低于每个密钥的限制（每秒 5 个请求、每秒 2 次搜索、
+  每秒一次区域调用）。如果你自行控制节奏，可用 `pacing=False` 将其关闭。
+- **配额。** `send_with_response(...).quota` 暴露软配额响应头。超出限制时，API 会放慢响应（最多
+  5 秒）而不是拒绝请求；默认的 60 秒超时为此留有余地。
+- **关联 ID。** 每个请求都带有 `X-Correlation-ID`。可用
+  `with dna.correlation_id("order-4711"): ...` 设置你自己的值，以便将 API 调用与你的日志关联起来。
+- **可观测性。** 交互会记录到 `domainnameapi` 日志记录器（请求和响应为 DEBUG 级别，
+  重试为 WARNING 级别）；`trace=callback` 会把每个请求、响应和重试以 `TraceEvent` 的形式交给你，
+  用于指标或错误上报。其中绝不包含 API key。
+- **线程。** `Client` 可在线程之间安全共享。创建一个并重复使用即可。
+- **宽容的解码。** 不带时区的日期、`null`、用 `[]` 代替 `{}`、以字符串形式发送的数字、数字或名称形式的状态，以及
+  任意大小写的角色（`"registrant"`、`"ADMINISTRATIVE"`）都可以解码。本包尚未识别的值
+  绝不会导致响应解码失败。
 
-#### 校验联系人
+## 客户端选项
 
-按照网关期望的方式补全并规范化联系人（本地执行，不访问网络）：缺失的字段会填入占位值，姓名中的数字和标点会被去除，电话号码会被拆分为号码 + 国家代码，State 为空时回退为 City。
+| 选项                            | 作用                                                                                     |
+|---------------------------------|------------------------------------------------------------------------------------------|
+| `environment="ote"`             | 使用测试环境（默认为 `"production"`）                                                    |
+| `base_url=url`                  | 将请求发送到代理或测试服务器                                                             |
+| `timeout=60`                    | 每次 HTTP 尝试的超时秒数                                                                 |
+| `retries=2`                     | 重试次数                                                                                 |
+| `pacing=False`                  | 关闭客户端节奏控制                                                                       |
+| `read_only=True`                | 阻止所有非读取请求                                                                       |
+| `currency="TRY"`                | 搜索价格与目录价格的币种                                                                 |
+| `user_agent="app/1.0"`          | 将你的产品名放在 User-Agent 前面                                                         |
+| `transport=...`                 | 你自己的 HTTP 层（`requests`、`httpx`、代理等）；参见 `domainnameapi.transport`          |
+| `trace=fn`                      | 观察每个请求、响应和重试                                                                 |
+| `logger=logging.getLogger(...)` | 将交互记录到另一个日志记录器                                                             |
+
+默认传输层使用 `urllib`，并遵循 `HTTPS_PROXY` 等变量。若要使用你自己的 CA 证书包，请传入
+`transport=dna.UrllibTransport(ssl_context=ctx)`。
+
+## 测试你的代码
+
+`domainnameapi.testing.FakeTransport` 会记录请求并以预设的回复作答；其他部分都不需要
+mock：
 
 ```python
-result = dna.validate_contact({
-    "FirstName": " Jo ",
-    "Phone": "+1 (202) 555-0100",
-    "Country": "Turkey",
-    "City": "",
-    "Fax": "0090 212 123 45 67",
-})
+from domainnameapi.testing import FakeTransport, api_error, ok
+
+fake = FakeTransport(
+    ok({"success": True, "info": {"domainName": "example.com", "status": "AVAILABLE", "price": 11.99}}),
+    api_error(404, dna.ErrorCode.DOMAIN_NOT_FOUND, "Domain not found"),
+)
+client = fake.client()  # 使用该假传输层的 Client，已关闭节奏控制
+
+assert client.domains.search("example.com").available
+assert fake.last.json() == {"domainName": "example.com"}
+with pytest.raises(dna.NotFoundError):
+    client.domains.info("missing.com")
 ```
 
-<details>
-<summary>示例输出</summary>
+## 从 v1 迁移
 
-```python
-{'FirstName': 'Jo',
- 'Phone': '2025550100',
- 'Country': 'TR',
- 'City': 'ISTANBUL',
- 'Fax': '2121234567',
- 'LastName': 'Isimyok',
- 'AddressLine1': 'Addres yok',
- 'ZipCode': '34000',
- 'PhoneCountryCode': '1',
- 'State': 'ISTANBUL',
- 'FaxCountryCode': '90'}
-```
+v2 是全新的设计：用类型化的结果取代字典，用异常取代 `{"result": "ERROR"}`
+信封，并提供完整的 REST API，而不再只是 php-dna 的方法集合。在你完成切换之前，
+可固定 `domainnameapi<2` 以继续使用 v1。
 
-</details>
+| v1                                                  | v2                                                                     |
+|-----------------------------------------------------|------------------------------------------------------------------------|
+| `DomainNameAPI(id, key, test_mode=True)`            | `Client(id, key, environment="ote")`                                   |
+| `res["result"] == "OK"`                             | 没有异常                                                               |
+| `get_reseller_details`, `get_current_balance`       | `account.get()` (+ `account.balance("USD")`)                           |
+| `check_availability`                                | `domains.search`, `domains.bulk_search`                                |
+| `get_list`                                          | `domains.list`, `domains.all`                                          |
+| `get_tld_list`                                      | `products.tlds`, `products.all_tlds`, `products.tld`                   |
+| `get_details`, `get_contacts`, `sync_from_registry` | `domains.info`                                                         |
+| `register_with_contact_info`                        | `domains.register_with_contacts`（或 `contacts.create` + `domains.register`） |
+| `renew`, `transfer`, `check_transfer`               | `domains.renew`, `domains.transfer`, `domains.transfer_check`          |
+| `modify_name_server`                                | `domains.set_name_servers`                                             |
+| `enable_theft_protection_lock` / `disable_...`      | `domains.lock` / `domains.unlock`                                      |
+| `modify_privacy_protection_status`                  | `domains.set_privacy`                                                  |
+| `save_contacts`                                     | `domains.update_contacts`, `domains.set_contact_handles`               |
+| `add_child_name_server`, `modify_child_name_server`, `delete_child_name_server` | `domains.add_host`, `domains.update_host`, `domains.delete_host` |
+| `get_resource_records`                              | `dns.list`, `dns.find`                                                 |
+| `add_resource_record`, `add_resource_record_value`  | `dns.add`                                                              |
+| `edit_resource_record`, `set_resource_record_set`, `replace_resource_record_value` | `dns.update`                            |
+| `delete_resource_record`, `remove_resource_record_value`, `delete_resource_record_set` | `dns.delete`（每个值调用一次）      |
+| `apply_resource_records`                            | `dns.apply`                                                            |
+| `get_forwarding`, `set_forwarding`, `delete_forwarding` | `domains.forwarding`, `domains.set_forwarding`, `domains.delete_forwarding` |
+| `cancel_transfer`, `approve_transfer`, `reject_transfer` | 不在已发布的 API 中；如果你的账户支持这些操作，请发送[你自己的请求](#请求与-baserequest) |
+| `is_tr_tld`, `validate_contact`                     | `name.endswith(".tr")`；每个请求都会执行校验                           |
+| `get_request_data`, `get_response_data`, ...        | `trace=`、`domainnameapi` 日志记录器、`send_with_response`             |
+| 遥测 (`set_error_reporting_enabled`, Sentry)        | 已移除：不会有任何数据离开你的进程；请将 `trace` 事件转发到你自己的上报系统 |
+| `set_ssl_verification(False)`                       | `transport=UrllibTransport(ssl_context=...)` 搭配你自己的 TLS 设置     |
 
-
-### 诊断与设置
-
-```python
-dna.get_details("example.com")
-
-dna.get_request_data()           # {'url': ..., 'method': 'GET', 'payload': {...}} of the last call
-dna.get_response_data()          # decoded response body of the last call ({'raw_response': ...} if not JSON)
-dna.get_parsed_response_data()   # body on success, {'Code', 'Message', 'Details'} on failure
-dna.get_response_headers()       # {'url', 'http_code', 'content_type', 'total_time', 'headers'}
-dna.get_last_function()          # 'request:GET domains/info'
-dna.get_service_url()            # 'https://api.domainresellerapi.com/api/v1'
-
-dna.set_service_url("https://ote.domainresellerapi.com/api/v1")
-dna.set_error_reporting_enabled(False)
-dna.set_telemetry_minimal(True)
-dna.set_ssl_verification(True)
-dna.zone_min_interval = 1.0
-```
-
-可以向构造函数传入自定义的 HTTP 传输层（用于代理处理、日志记录、测试）：任何具有 `send(request)` 方法并返回 `domainnameapi.HttpResponse` 的对象均可：
-
-```python
-from domainnameapi import DomainNameAPI, HttpResponse, UrllibTransport
-
-
-class LoggingTransport(UrllibTransport):
-    def send(self, request):
-        print(request.method, request.url)
-        return super().send(request)
-
-
-dna = DomainNameAPI(reseller_id, api_key, transport=LoggingTransport())
-```
-
-## 测试
-
-测试套件无需任何凭据，也不会发起任何外部网络调用：
+## 开发
 
 ```bash
-python -m unittest discover -s tests -v
+python -m unittest discover -s tests -v   # 或：python -m pytest
+python -m build                            # sdist 和 wheel
 ```
 
-| 测试文件 | 说明 |
-|-----------|-------------|
-| `tests/test_conformance.py` | 运行全部 134 个 php-dna 一致性测试用例：线路上的请求相同，返回值也相同 |
-| `tests/test_edge_cases.py` | 从 php-dna 记录的额外边界情况（不常见的网关响应和输入） |
-| `tests/test_http.py` | HTTP 层：请求头、查询字符串、JSON 请求体、超时、重定向 |
-| `tests/test_errors.py` | 网关响应的错误映射 |
-| `tests/test_telemetry.py` | 遥测数据、凭据屏蔽、关闭选项 |
-| `tests/test_utils.py` | 实用工具以及与 PHP 兼容的值处理 |
+测试从不调用真实的 API。`tests/testdata/openapi.json` 是 API 的 OpenAPI 文档，与
+`dna` CLI 内嵌的是同一份。测试会对照它检查每个请求类（方法、
+路径、查询参数名、请求体字段、必填字段）、每个响应模型的 JSON 字段名是否符合响应
+schema，以及每个枚举值；当 API 新增了没有对应请求类的操作时，测试会失败。更新方法：
 
-<hr style="border: 4px solid #000; border-style: dashed;">
+```bash
+curl -fsSL -A "python-dna-spec-update" -o tests/testdata/openapi.json https://api.domainresellerapi.com/swagger/v1/swagger.json
+python -m unittest discover -s tests
+```
 
+本仓库的约定请参见 [AGENTS.md](AGENTS.md)。
 
-## 返回和错误代码及说明
+## 支持
 
-| 代码 | 描述 | 详细 |
-|------|------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1000 | 命令成功完成 | 操作成功。 |
-| 1001 | 命令成功完成；操作待处理 | 操作成功。但是，操作当前已排队等待完成。 |
-| 2003 | 缺少必需参数 | 参数缺失错误。例如：联系信息中没有电话输入。 |
-| 2105 | 对象不符合续费条件 | 域名状态不适合续费，已锁定更新操作。状态不应为 "clientupdateprohibited"。也可能由其他状态条件导致。 |
-| 2200 | 身份验证错误 | 授权错误，安全代码不正确或域名在另一个注册商处注册。 |
-| 2302 | 对象已存在 | 域名或名称服务器信息已存在于数据库中。无法注册。 |
-| 2303 | 对象不存在 | 域名或名称服务器信息在数据库中不存在。需要新注册。 |
-| 2304 | 对象状态禁止操作 | 域名状态不适合更新，已锁定更新操作。状态不应为 "clientupdateprohibited"。也可能由其他状态条件导致。 |
-
-| 代码 | 详细（网关消息原文）                                                                                                                 |
-|------|--------------------------------------------------------------------------------------------------------------------------------------|
-| 101  | System Error Detailed For ({0})!                                                                                                     |
-| 102  | Multiple Errors Detailed For ({0})!                                                                                                  |
-| 103  | Unknown Errors Detailed For ({0})!                                                                                                   |
-| 200  | API command not found ({0})!                                                                                                         |
-| 210  | API service not found ({0})!                                                                                                         |
-| 211  | API service provider not set!                                                                                                        |
-| 300  | Reseller not found!                                                                                                                  |
-| 301  | Your current IP address is not authorized to access. Please make sure you are connecting from an authorized IP address and try again |
-| 310  | TLD is not supported!                                                                                                                |
-| 320  | API not found!                                                                                                                       |
-| 321  | Currency is not supported!                                                                                                           |
-| 330  | Required parameter(s) not set ({0}).                                                                                                 |
-| –    | 请确保发送完整的所有联系人对象                                                                                                       |
-| 340  | Price definition not found ({0}[{1}]-{2}{3}).                                                                                        |
-| 350  | Insufficient reseller balance. (Reseller Id : {0} - Current Balance : {1} {2}).                                                      |
-| 350  | Accounting currency does not match or the balance is not sufficient.                                                                 |
-| 360  | Invalid API request for field ({0}).                                                                                                 |
-| 360  | API quota exceeded!                                                                                                                  |
-| 361  | Throttled error!                                                                                                                     |
-| 362  | Premium domain is not available to register right now.                                                                               |
-| 363  | Operation cancelled because domain in auto-renewal period                                                                            |
-| 364  | This domain is currently unavailable for transaction due to a problem with the registry                                              |
-
-| 代码 | 详细（网关消息原文）                                                                        |
-|------|---------------------------------------------------------------------------------------------|
-| 400  | Invalid contact ({0}).                                                                      |
-| 401  | Contact info can not sync.                                                                  |
-| 402  | No access to contact information from registry.                                             |
-| 403  | THE SYSTEM HAS MISSING INFORMATION. ENTER YOUR DEFAULT INFORMATION OR CONTACT SUPPORT TEAM. |
-| 404  | DOMAIN CONTACT CANNOT UPDATE. PERMISSION FROM THE REGISTRY.                                 |
-| 410  | Contact not found.                                                                          |
-| 410  | Contact not found ({0}).                                                                    |
-| 420  | Invalid Api command for contact {0}.                                                        |
-| 430  | Contact api not found.                                                                      |
-| 440  | Contact is not synced.                                                                      |
-| 450  | Too many domain contacts!                                                                   |
-| 451  | Failed to proceed with contact update.                                                      |
-
-| 代码 | 详细（网关消息原文）                                                                                                                 |
-|------|--------------------------------------------------------------------------------------------------------------------------------------|
-| 500  | Invalid domain id.                                                                                                                   |
-| 500  | Invalid domain id ({0}).                                                                                                             |
-| 501  | Domain could not synchronized({0})                                                                                                   |
-| 502  | Internal transfer failed                                                                                                             |
-| 503  | Domain registration is not available.                                                                                                |
-| 504  | Domain information does not match. Before :{0}                                                                                       |
-| 505  | Enter the Ip Address.                                                                                                                |
-| 506  | Domain Transfer Has Been Started But Contact Info Not Read.                                                                          |
-| 507  | Authorization error.                                                                                                                 |
-| 510  | Domain not found.                                                                                                                    |
-| 511  | Expired domains cannot be found.                                                                                                     |
-| 512  | Domain is not renewable.                                                                                                             |
-| 513  | Domain is not in updateable status. It must be active for to be updated                                                              |
-| 514  | Redemption Period Expected.                                                                                                          |
-| 520  | Invalid Api command for domain "{0}".                                                                                                |
-| 530  | Invalid domain period. Period must be {0} to {1} years. Requested period is {2} years.                                               |
-| 540  | Domain cannot be extended beyond {0} years from current date.                                                                        |
-| 550  | Invalid domain name. Domain must be {0} to {1} characters length. Requested domain name is {2} characters.                           |
-| 560  | Invalid name server count. Domain must have {0} to {1} name servers. Requested name server count is {2}.                             |
-| 561  | No name server information found in the incoming request                                                                             |
-| 570  | Idn not supported for tld "{0}".                                                                                                     |
-| 571  | Period invalid.                                                                                                                      |
-| 572  | Command invalid.                                                                                                                     |
-| 573  | Domain names not found.                                                                                                              |
-| 574  | TLD names not found.                                                                                                                 |
-| 575  | Domain is not in updateable status. It must be active for name servers to be updated                                                 |
-| 576  | Domain can be renewed in the last 1 month before the expire date                                                                     |
-| 580  | Transfer not supported for tld "{0}".                                                                                                |
-| 581  | Child name server not found                                                                                                          |
-| 582  | Transfer started by other reseller.                                                                                                  |
-| 583  | Transfer not initialized. Please contact the support team.                                                                           |
-| 584  | Object status prohibits operation                                                                                                    |
-| 590  | Auth code is required for this transfer.                                                                                             |
-| 591  | Auth code is not valid.                                                                                                              |
-| 592  | Transfer lock exists on domain.                                                                                                      |
-| 593  | Domain cannot be transferred, Status Information and Transfer Lock must comply with the required criteria. (Status Information: #ok) |
-| 594  | Domain name server address could not resolved ({0})                                                                                  |
-| 595  | Contact information can not be read (whois.registrar.tld) Please make sure that privacy protection status open                       |
-| 596  | Contact information could not verified                                                                                               |
-| 597  | Tld Not Found                                                                                                                        |
-| 598  | Unknown error occurred                                                                                                               |
-| 599  | Domain Forward Not Found                                                                                                             |
-
+- API 文档：<https://www.domainnameapi.com/docs/>
+- CLI 与 MCP 服务器：<https://github.com/domainreseller/cli>
+- 网站：<https://www.domainnameapi.com>
 
 ## 许可证
 
-Apache License 2.0 — 参见 [LICENSE](LICENSE)。
+Apache License 2.0。参见 [LICENSE](LICENSE)。
