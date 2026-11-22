@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-22
+
 **Breaking, forced by the API.** On 2026-11-20 the API changed its SSL endpoints in production and OTE: a domain
 can now have several certificates, so an existing certificate is addressed by its certificate id (a GUID) and no
 longer by its domain name. The SSL calls of 2.0.0 fail against the API since then; this release follows the API.
