@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+**Breaking, forced by the API.** On 2026-11-20 the API changed its SSL endpoints in production and OTE: a domain
+can now have several certificates, so an existing certificate is addressed by its certificate id (a GUID) and no
+longer by its domain name. The SSL calls of 2.0.0 fail against the API since then; this release follows the API.
+Nothing outside `client.ssl` changed incompatibly.
+
+What to change in your code:
+
+- Keep the `certificate_id` that `ssl.initialize` returns and pass it, instead of the domain name, to
+  `ssl.configure`, `ssl.status`, `ssl.get`, `ssl.content`, `ssl.reissue` and `ssl.revoke`. For certificates you
+  already have, look the id up once with `ssl.list(domain_name="example.com")`.
+- Call `ssl.approvers` with keywords: `approvers(certificate_id=...)` for an existing certificate, or
+  `approvers(domain_name=..., package_code=...)` before a purchase.
+- Renew with `ssl.renew(certificate_id)` followed by `ssl.configure(<the id renew returned>, ...)`. A second
+  `ssl.initialize` is not a renewal: it buys an unrelated certificate at the purchase price, and the old
+  certificate never becomes `Renewed`.
+- Configure a certificate within 15 days of `initialize` or `renew` (the API used to allow 7).
+
+### Changed
+
+- **Breaking:** `ssl.configure`, `ssl.status`, `ssl.get`, `ssl.content`, `ssl.reissue` and `ssl.revoke` take the
+  certificate id as their first argument instead of the domain name. `SSLConfigureRequest`, `SSLStatusRequest`,
+  `SSLGetRequest`, `SSLContentRequest`, `SSLReissueRequest` and `SSLRevokeRequest` have a `certificate_id` field
+  in place of `domain_name`.
+- **Breaking:** `ssl.approvers` takes keyword arguments only, `certificate_id` or `domain_name` with
+  `package_code`; a domain name without a package code is refused before sending, as the API refuses it.
+  `SSLApproversRequest` has `certificate_id` as its first field.
+- A certificate id that is not a GUID, such as a domain name passed by code written for 2.0.0, raises
+  `InputError` before anything is sent, with a message that says where to get the id.
+- `Certificate`, `CertificateStatus` and `CertificateContent` have a `certificate_id` field. It is their first
+  field: build these models with keyword arguments.
+- `tests/testdata/openapi.json` is the API's current document (67 operations).
+
+### Added
+
+- `ssl.renew(certificate_id)` and `SSLRenewRequest`: renew a certificate from 30 days before its subscription
+  ends. It charges the balance and has the safety class of `initialize` (`BILLABLE`): never retried after a
+  network error or a 5xx answer, and blocked by a read-only client. The result's `certificate_id` is the id of
+  the new renewal certificate.
+- `ssl.list(domain_name=..., skip=..., limit=...)` and `ssl.all(domain_name=...)`, with `SSLListRequest` and
+  `CertificateListItem`: your certificates, newest first, with their ids, states and expiry dates.
+- `account.profile()` with `AccountProfileRequest`, `ResellerProfile` and the enums `AccountCurrency` and
+  `ResellerStatus`: the reseller the credentials belong to.
+
 ## [2.0.0] - 2026-11-20
 
 A new SDK, designed for Python and for the REST API instead of ported from php-dna, and modelled on the

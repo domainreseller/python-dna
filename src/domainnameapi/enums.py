@@ -29,6 +29,7 @@ E = TypeVar("E", bound="ApiIntEnum")
 S = TypeVar("S", bound="ApiStrEnum")
 
 __all__ = [
+    "AccountCurrency",
     "ApiIntEnum",
     "ApiStrEnum",
     "AuthenticationType",
@@ -51,6 +52,7 @@ __all__ = [
     "OrderType",
     "ProductType",
     "RecordType",
+    "ResellerStatus",
     "TransactionStatus",
     "TransactionType",
     "WebServerType",
@@ -458,6 +460,26 @@ class WebServerType(ApiStrEnum):
 
 # ---------------------------------------------------------------------------
 # Account, orders and products
+
+
+class AccountCurrency(ApiIntEnum):
+    """The currency a reseller account is kept in."""
+
+    TRY = 1, "TRY"
+    USD = 2, "USD"
+    EURO = 3, "EURO"
+
+
+class ResellerStatus(ApiIntEnum):
+    """The state of a reseller account."""
+
+    ACTIVE = 0, "Active"
+    #: The account still has to be verified (e-mail, SMS, ...).
+    WAITING_FOR_APPROVAL = 1, "WaitingForApproval"
+    #: Access to the account is blocked.
+    SUSPEND = 2, "Suspend"
+    #: A new reseller that has not completed the sign-up wizard yet.
+    WAITING_FOR_COMPLETION_WIZARD = 3, "WaitingForCompletionWizard"
 
 
 class TransactionType(ApiIntEnum):

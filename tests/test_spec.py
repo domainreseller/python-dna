@@ -15,7 +15,7 @@ import os
 import re
 from datetime import datetime, timezone
 
-from helpers import TESTDATA, TestCase, dna, sample_contact, sample_ssl_contact
+from helpers import CERT_ID, TESTDATA, TestCase, dna, sample_contact, sample_ssl_contact
 
 from domainnameapi.model import Converter, Model, _Nested, _Page
 from domainnameapi.request import BaseRequest
@@ -33,6 +33,7 @@ def spec_cases():
     return [
         # account
         (dna.AccountGetRequest(), dna.Account),
+        (dna.AccountProfileRequest(), dna.ResellerProfile),
         (dna.AccountTransactionsRequest(
             transaction_types=[dna.TransactionType.REGISTER, dna.TransactionType.RENEW],
             product_types=[dna.ProductType.DOMAIN], charge_type=dna.ChargeType.SUBTRACT, currencies=["USD"],
@@ -93,15 +94,17 @@ def spec_cases():
                                    ["www.example.com"]), dna.CSR),
         (dna.SSLCheckCSRRequest("-----BEGIN CERTIFICATE REQUEST-----"), dna.CSRInfo),
         (dna.SSLInitializeRequest("example.com", "PositiveSSL"), dna.SSLOperationResult),
-        (dna.SSLConfigureRequest("example.com", "csr", sample_ssl_contact(), "key", "admin@example.com",
+        (dna.SSLRenewRequest(CERT_ID), dna.SSLOperationResult),
+        (dna.SSLConfigureRequest(CERT_ID, "csr", sample_ssl_contact(), "key", "admin@example.com",
                                  dna.AuthenticationType.EMAIL, dna.WebServerType.APACHE, ["a.example.com"],
                                  ["*.example.com"]), dna.SSLOperationResult),
-        (dna.SSLStatusRequest("example.com"), dna.CertificateStatus),
-        (dna.SSLGetRequest("example.com"), dna.Certificate),
-        (dna.SSLContentRequest("example.com"), dna.CertificateContent),
-        (dna.SSLReissueRequest("example.com", "admin@example.com", "csr", "key"), dna.SSLOperationResult),
-        (dna.SSLApproversRequest("example.com", "PositiveSSL"), dna.SSLApproversRequest.response),
-        (dna.SSLRevokeRequest("example.com"), dna.SSLOperationResult),
+        (dna.SSLStatusRequest(CERT_ID), dna.CertificateStatus),
+        (dna.SSLGetRequest(CERT_ID), dna.Certificate),
+        (dna.SSLContentRequest(CERT_ID), dna.CertificateContent),
+        (dna.SSLListRequest("example.com", 5, 50), dna.SSLListRequest.response),
+        (dna.SSLReissueRequest(CERT_ID, "admin@example.com", "csr", "key"), dna.SSLOperationResult),
+        (dna.SSLApproversRequest(CERT_ID, "example.com", "PositiveSSL"), dna.SSLApproversRequest.response),
+        (dna.SSLRevokeRequest(CERT_ID), dna.SSLOperationResult),
         # hosting
         (dna.HostingPackagesRequest(), dna.HostingPackagesRequest.response),
         (dna.HostingPlansRequest("6f1c0000-0000-4000-8000-000000000001"), dna.HostingPlansRequest.response),
@@ -290,6 +293,7 @@ class SpecTest(TestCase):
         domains = "Dna.DomainService.Domains."
         dnssec = "Dna.DomainService.Dnssec."
         deposit = "Dna.DepositService.Accounts."
+        reseller = "Dna.ResellerService.Resellers."
         orders = "Dna.OrderService.Orders."
         product = "Dna.ProductService.Products."
         known = {
@@ -307,6 +311,8 @@ class SpecTest(TestCase):
             deposit + "AccountTransactionDto.status": dna.TransactionStatus,
             deposit + "AccountTransactionDto.chargeType": dna.ChargeType,
             deposit + "AccountTransactionDto.productType": dna.ProductType,
+            reseller + "ResellerMeDto.accountCurrency": dna.AccountCurrency,
+            reseller + "ResellerMeDto.status": dna.ResellerStatus,
             orders + "OrderDto.status": dna.OrderStatus,
             orders + "OrderProductDto.status": dna.OrderProductStatus,
             orders + "OrderProductDto.orderType": dna.OrderType,

@@ -119,7 +119,7 @@ class EnumTest(TestCase):
         dna.DomainStatus, dna.DNSSECMode, dna.DocumentType, dna.DocumentStatus, dna.DocumentOperationType,
         dna.DNSSECStatus, dna.DNSSECOperationType, dna.DSRecordStatus, dna.DNSSECAlgorithm, dna.DSDigestType,
         dna.TransactionType, dna.TransactionStatus, dna.ChargeType, dna.ProductType, dna.OrderType, dna.OrderStatus,
-        dna.OrderProductStatus,
+        dna.OrderProductStatus, dna.AccountCurrency, dna.ResellerStatus,
     )
 
     def test_every_int_enum(self):

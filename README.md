@@ -20,7 +20,7 @@ Typed Python client for the [Domain Name API](https://www.domainnameapi.com) res
 registration, renewal and transfer, DNS, DNSSEC, contacts, SSL certificates, hosting, orders, the product
 catalogue and your balance.
 
-- **All 64 API operations**, grouped the same way as the [`dna` CLI](https://github.com/domainreseller/cli):
+- **All 67 API operations**, grouped the same way as the [`dna` CLI](https://github.com/domainreseller/cli):
   `dna domain info` is `client.domains.info`, `dna dns add` is `client.dns.add`.
 - **Typed results and enums**: dataclasses with `datetime` fields and named statuses
   (`d.status == DomainStatus.PENDING_DELETE`), not dictionaries. Your editor completes every field.
@@ -113,12 +113,12 @@ A wrong key or environment fails on the first request with an `AuthenticationErr
 
 | Service           | CLI group     | Methods                                                                                                                                                           |
 |-------------------|---------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `client.account`  | `dna account` | `get`, `transactions`, `all_transactions`                                                                                                                         |
+| `client.account`  | `dna account` | `get`, `profile`, `transactions`, `all_transactions`                                                                                                              |
 | `client.contacts` | `dna contact` | `get`, `create`, `update`, `verification`, `resend_verification`                                                                                                  |
 | `client.domains`  | `dna domain`  | `search`, `bulk_search`, `list`, `all`, `info`, `register`, `register_with_contacts`, `renew`, `renew_check`, `restore`, `transfer`, `transfer_check`, `transfer_status`, `lock`, `unlock`, `set_privacy`, `update_auth_code`, `set_name_servers`, `add_host`, `update_host`, `delete_host`, `update_contacts`, `set_contact_handles`, `documents`, `upload_documents`, `forwarding`, `set_forwarding`, `delete_forwarding` |
 | `client.dns`      | `dna dns`     | `list`, `find`, `add`, `update`, `delete`, `apply`                                                                                                                |
 | `client.dnssec`   | `dna dnssec`  | `get`, `add`, `remove`, `disable`                                                                                                                                 |
-| `client.ssl`      | `dna ssl`     | `generate_csr`, `check_csr`, `initialize`, `configure`, `status`, `get`, `content`, `reissue`, `approvers`, `revoke`                                              |
+| `client.ssl`      | `dna ssl`     | `generate_csr`, `check_csr`, `initialize`, `configure`, `status`, `get`, `content`, `list`, `all`, `reissue`, `renew`, `approvers`, `revoke`                      |
 | `client.hosting`  | `dna hosting` | `packages`, `plans`, `create`, `wait`, `get`, `get_by_token`, `status`                                                                                            |
 | `client.orders`   | `dna order`   | `get`                                                                                                                                                             |
 | `client.products` | `dna product` | `list`, `info`, `tlds`, `all_tlds`, `tld`, `ssls`                                                                                                                 |
@@ -289,14 +289,39 @@ request) are checked before upload.
 ```python
 csr = client.ssl.generate_csr("example.com", country="TR", state="Istanbul", locality="Istanbul",
                               organization="Example Ltd", organization_unit="IT")
-client.ssl.initialize("example.com", "PositiveSSL")  # charges the balance
-client.ssl.configure("example.com", csr=csr.csr, approver_mail="admin@example.com",
+order = client.ssl.initialize("example.com", "PositiveSSL")  # charges the balance
+cert_id = order.certificate_id  # store it: every later call takes it
+client.ssl.configure(cert_id, csr=csr.csr, approver_mail="admin@example.com",
                      authentication_type=dna.AuthenticationType.EMAIL,
                      web_server_type=dna.WebServerType.APACHE, contact=ssl_contact)
-st = client.ssl.status("example.com")  # poll until st.is_issued
-cert = client.ssl.content("example.com")
+st = client.ssl.status(cert_id)  # poll until st.is_issued
+cert = client.ssl.content(cert_id)
 open("example.com.crt", "w").write(cert.chain)
 ```
+
+A domain can have several certificates, so an existing certificate is addressed by its **certificate id** (a
+GUID), not by its domain name: `configure`, `status`, `get`, `content`, `reissue`, `revoke` and `renew` all take
+it. `initialize` and `renew` return it, and `list` finds it again. A domain name passed where a certificate id is
+expected raises `InputError` before anything is sent.
+
+```python
+for c in client.ssl.list(domain_name="example.com"):  # newest first; ssl.all(...) fetches every page
+    print(c.certificate_id, c.status, c.subscription_expires_at)
+
+client.ssl.approvers(certificate_id=cert_id)  # an existing certificate
+client.ssl.approvers(domain_name="example.com", package_code="PositiveSSL")  # before a purchase
+
+renewal = client.ssl.renew(cert_id)  # charges the balance
+# The renewal is a new certificate with its own id: configure that one.
+client.ssl.configure(renewal.certificate_id, csr=new_csr.csr, approver_mail="admin@example.com",
+                     authentication_type=dna.AuthenticationType.EMAIL,
+                     web_server_type=dna.WebServerType.APACHE, contact=ssl_contact)
+```
+
+Configure a certificate within 15 days of `initialize` or `renew`, or it is cancelled. `renew` is allowed from 30
+days before the subscription ends (`client.ssl.get(cert_id).subscription.expires_at`). To renew, call `renew` and
+then `configure` with the id it returns: calling `initialize` again is not a renewal, it buys an unrelated
+certificate at the purchase price.
 
 ### Hosting
 
@@ -315,6 +340,7 @@ Never call `create` again for a hosting that is still provisioning: that charges
 ```python
 account = client.account.get()
 usd = account.balance("USD")
+profile = client.account.profile()  # the reseller behind the credentials: name, account_currency, status, ...
 
 for tx in client.account.all_transactions(since=month_start):
     print(tx.creation_time, tx.type, tx.change)

@@ -15,6 +15,9 @@ from domainnameapi.testing import FakeTransport, Reply, api_error, ok  # noqa: E
 
 TESTDATA = os.path.join(ROOT, "tests", "testdata")
 
+#: A certificate id as the API returns it.
+CERT_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+
 
 def fake(*replies, **options):
     """A FakeTransport and a client using it (pacing off, retries without real sleeping)."""

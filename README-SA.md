@@ -20,7 +20,7 @@
 النطاقات وتسجيلها وتجديدها ونقلها، وDNS، وDNSSEC، وجهات الاتصال، وشهادات SSL، والاستضافة، والطلبات، وكتالوج
 المنتجات، ورصيدك.
 
-- **جميع عمليات API الأربع والستين**، مجمّعة بالطريقة نفسها المتّبعة في [`dna` CLI](https://github.com/domainreseller/cli):
+- **جميع عمليات API السبع والستين**، مجمّعة بالطريقة نفسها المتّبعة في [`dna` CLI](https://github.com/domainreseller/cli):
   الأمر `dna domain info` يقابله `client.domains.info`، والأمر `dna dns add` يقابله `client.dns.add`.
 - **نتائج وقيم تعداد مُنمَّطة**: فئات بيانات (dataclasses) بحقول `datetime` وحالات مسمّاة
   (`d.status == DomainStatus.PENDING_DELETE`)، بلا قواميس. يُكمل محررك كل حقل تلقائيًا.
@@ -113,12 +113,12 @@ client = dna.Client.from_env(user_agent="my-panel/1.4")
 
 | الخدمة            | مجموعة CLI    | العمليات                                                                                                                                                          |
 |-------------------|---------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `client.account`  | `dna account` | `get`, `transactions`, `all_transactions`                                                                                                                         |
+| `client.account`  | `dna account` | `get`, `profile`, `transactions`, `all_transactions`                                                                                                              |
 | `client.contacts` | `dna contact` | `get`, `create`, `update`, `verification`, `resend_verification`                                                                                                  |
 | `client.domains`  | `dna domain`  | `search`, `bulk_search`, `list`, `all`, `info`, `register`, `register_with_contacts`, `renew`, `renew_check`, `restore`, `transfer`, `transfer_check`, `transfer_status`, `lock`, `unlock`, `set_privacy`, `update_auth_code`, `set_name_servers`, `add_host`, `update_host`, `delete_host`, `update_contacts`, `set_contact_handles`, `documents`, `upload_documents`, `forwarding`, `set_forwarding`, `delete_forwarding` |
 | `client.dns`      | `dna dns`     | `list`, `find`, `add`, `update`, `delete`, `apply`                                                                                                                |
 | `client.dnssec`   | `dna dnssec`  | `get`, `add`, `remove`, `disable`                                                                                                                                 |
-| `client.ssl`      | `dna ssl`     | `generate_csr`, `check_csr`, `initialize`, `configure`, `status`, `get`, `content`, `reissue`, `approvers`, `revoke`                                              |
+| `client.ssl`      | `dna ssl`     | `generate_csr`, `check_csr`, `initialize`, `configure`, `status`, `get`, `content`, `list`, `all`, `reissue`, `renew`, `approvers`, `revoke`                      |
 | `client.hosting`  | `dna hosting` | `packages`, `plans`, `create`, `wait`, `get`, `get_by_token`, `status`                                                                                            |
 | `client.orders`   | `dna order`   | `get`                                                                                                                                                             |
 | `client.products` | `dna product` | `list`, `info`, `tlds`, `all_tlds`, `tld`, `ssls`                                                                                                                 |
@@ -289,14 +289,39 @@ page = client.domains.documents("example.com.tr")
 ```python
 csr = client.ssl.generate_csr("example.com", country="TR", state="Istanbul", locality="Istanbul",
                               organization="Example Ltd", organization_unit="IT")
-client.ssl.initialize("example.com", "PositiveSSL")  # يخصم من الرصيد
-client.ssl.configure("example.com", csr=csr.csr, approver_mail="admin@example.com",
+order = client.ssl.initialize("example.com", "PositiveSSL")  # يخصم من الرصيد
+cert_id = order.certificate_id  # احتفظ به: كل استدعاء لاحق يحتاج إليه
+client.ssl.configure(cert_id, csr=csr.csr, approver_mail="admin@example.com",
                      authentication_type=dna.AuthenticationType.EMAIL,
                      web_server_type=dna.WebServerType.APACHE, contact=ssl_contact)
-st = client.ssl.status("example.com")  # استعلم دوريًا حتى تصبح st.is_issued صحيحة
-cert = client.ssl.content("example.com")
+st = client.ssl.status(cert_id)  # استعلم دوريًا حتى تصبح st.is_issued صحيحة
+cert = client.ssl.content(cert_id)
 open("example.com.crt", "w").write(cert.chain)
 ```
+
+قد يكون للنطاق الواحد أكثر من شهادة، ولذلك يُشار إلى الشهادة الموجودة بـ**معرّف الشهادة** (GUID) لا باسم النطاق:
+الدوال `configure` و`status` و`get` و`content` و`reissue` و`revoke` و`renew` تأخذه كلها. تُعيده `initialize`
+و`renew`، وتعثر عليه `list` من جديد. وإذا مُرِّر اسم نطاق في موضع معرّف الشهادة، يُطلَق `InputError` قبل إرسال أي
+شيء.
+
+```python
+for c in client.ssl.list(domain_name="example.com"):  # الأحدث أولًا؛ و ssl.all(...) تجلب كل الصفحات
+    print(c.certificate_id, c.status, c.subscription_expires_at)
+
+client.ssl.approvers(certificate_id=cert_id)  # شهادة موجودة
+client.ssl.approvers(domain_name="example.com", package_code="PositiveSSL")  # قبل الشراء
+
+renewal = client.ssl.renew(cert_id)  # يخصم من الرصيد
+# التجديد شهادة جديدة لها معرّفها الخاص: اضبط إعدادات هذه الشهادة.
+client.ssl.configure(renewal.certificate_id, csr=new_csr.csr, approver_mail="admin@example.com",
+                     authentication_type=dna.AuthenticationType.EMAIL,
+                     web_server_type=dna.WebServerType.APACHE, contact=ssl_contact)
+```
+
+اضبط إعدادات الشهادة خلال 15 يومًا من `initialize` أو `renew`، وإلا أُلغيت. يُتاح `renew` ابتداءً من 30 يومًا قبل
+انتهاء الاشتراك (`client.ssl.get(cert_id).subscription.expires_at`). للتجديد استدعِ `renew` ثم `configure`
+بالمعرّف الذي تُعيده: استدعاء `initialize` مرة أخرى ليس تجديدًا، بل يشتري بسعر الشراء شهادة جديدة لا علاقة لها
+بالأولى.
 
 ### الاستضافة
 
@@ -315,6 +340,7 @@ print(st.panel_address, st.username, st.password)
 ```python
 account = client.account.get()
 usd = account.balance("USD")
+profile = client.account.profile()  # الموزّع صاحب بيانات الاعتماد: name و account_currency و status وغيرها
 
 for tx in client.account.all_transactions(since=month_start):
     print(tx.creation_time, tx.type, tx.change)
