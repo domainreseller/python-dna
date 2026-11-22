@@ -425,7 +425,7 @@ class Client:
         self._sleep = time.sleep
         self._pacer: Optional[_Pacer] = _Pacer(lambda: self._clock(), lambda s: self._sleep(s)) if pacing else None
 
-        #: Balance and balance transactions (``dna account``).
+        #: Balance, reseller profile and balance transactions (``dna account``).
         self.account = AccountService(self)
         #: Reusable contact handles (``dna contact``).
         self.contacts = ContactService(self)

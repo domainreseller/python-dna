@@ -1,8 +1,12 @@
 """Service methods: what they send and how they read the answers."""
 
+import uuid
 from datetime import datetime, timezone
 
-from helpers import TestCase, api_error, dna, fake, ok, sample_contact, sample_ssl_contact
+from helpers import CERT_ID, Reply, TestCase, api_error, dna, fake, ok, sample_contact, sample_ssl_contact
+
+#: The id of the certificate that renews CERT_ID.
+RENEWAL_ID = "0b1e7a52-9c3d-4f6a-8e21-5d4c3b2a1f00"
 
 
 class AccountTest(TestCase):
@@ -13,6 +17,38 @@ class AccountTest(TestCase):
         self.assertEqual((a.reseller_id, a.reseller_name, a.balance("TRY"), a.balance("usd")),
                          ("r-1", "Acme", 100.5, 12.0))
         self.assertEqual((transport.last.method, transport.last.path), ("GET", "/api/v1/deposit/accounts/me"))
+
+    def test_profile(self):
+        reseller_id = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        transport, client = fake(
+            ok({"id": reseller_id, "resellerAutoId": 4711, "name": "Acme", "companyName": "Acme Ltd",
+                "resellerGroupName": "Gold", "accountCurrency": 2, "status": 0, "isSubReseller": False,
+                "isBalanceSuspended": True, "isMcpEnabled": True}),
+            ok({"accountCurrency": "try", "status": "WaitingForCompletionWizard"}),
+            ok({"accountCurrency": 9, "status": 7}),
+        )
+        p = client.account.profile()
+        r = transport.last
+        self.assertEqual((r.method, r.path, r.query, r.body), ("GET", "/api/v1/resellers/me", {}, b""))
+        self.assertEqual((p.id, p.reseller_auto_id, p.name, p.company_name, p.reseller_group_name),
+                         (reseller_id, 4711, "Acme", "Acme Ltd", "Gold"))
+        self.assertIs(p.account_currency, dna.AccountCurrency.USD)
+        self.assertEqual(str(p.account_currency), "USD")
+        self.assertIs(p.status, dna.ResellerStatus.ACTIVE)
+        self.assertEqual((p.is_sub_reseller, p.is_balance_suspended, p.is_mcp_enabled), (False, True, True))
+
+        p = client.account.profile()
+        self.assertIs(p.account_currency, dna.AccountCurrency.TRY)
+        self.assertIs(p.status, dna.ResellerStatus.WAITING_FOR_COMPLETION_WIZARD)
+        self.assertEqual((p.id, p.reseller_auto_id, p.is_mcp_enabled), ("", 0, False))
+
+        p = client.account.profile()  # values this package does not know yet never fail
+        self.assertEqual((int(p.account_currency), p.account_currency.is_known), (9, False))
+        self.assertEqual((int(p.status), p.status.is_known), (7, False))
+
+        self.assertIs(dna.AccountProfileRequest().endpoint().safety, dna.Safety.READ)
+        _, client = fake(ok({"name": "Acme"}), read_only=True)
+        self.assertEqual(client.account.profile().name, "Acme")
 
     def test_transactions(self):
         transport, client = fake(
@@ -460,43 +496,250 @@ class SSLTest(TestCase):
     def test_flow(self):
         transport, client = fake(
             ok({"csr": "-----BEGIN CERTIFICATE REQUEST-----", "privateKey": "-----BEGIN PRIVATE KEY-----"}),
-            ok({"success": True, "certificateId": "c-1", "status": "Initialized"}),
-            ok({"success": True, "status": "Configured", "dcvDetails": "CNAME _abc"}),
-            ok({"domainName": "example.com", "status": "Issued", "isIssued": True,
+            ok({"success": True, "certificateId": CERT_ID, "status": "WaitingForInstall"}),
+            ok({"success": True, "certificateId": CERT_ID, "status": "WaitingForValidation",
+                "dcvDetails": "CNAME _abc"}),
+            ok({"certificateId": CERT_ID, "domainName": "example.com", "status": "Active", "isIssued": True,
                 "certificateExpiresAt": "2027-11-20T00:00:00"}),
-            ok({"certificate": "CERT", "intermediateCertificate1": "INT1", "rootCertificate": "ROOT"}),
-            ok({"mails": ["admin@example.com", "hostmaster@example.com"]}),
+            ok({"certificateId": CERT_ID, "certificate": "CERT", "intermediateCertificate1": "INT1",
+                "rootCertificate": "ROOT"}),
+            ok({"certificateId": CERT_ID, "domainName": "example.com", "status": "Active",
+                "packageCode": "PositiveSSL", "subscription": {"expiresAt": "2027-11-20T00:00:00"}}),
+            ok({"success": True, "certificateId": CERT_ID, "csr": "NEW CSR", "privateKey": "NEW KEY"}),
             ok({"success": False, "message": "Already revoked"}),
         )
         csr = client.ssl.generate_csr("example.com", country="tr", state="Istanbul", locality="Istanbul",
                                       organization="Example Ltd", organization_unit="IT")
         self.assertEqual(transport.last.json()["country"], "TR")
         self.assertNotIn("alternativeNames", transport.last.json())
-        self.assertEqual(client.ssl.initialize("example.com", "PositiveSSL").certificate_id, "c-1")
-        res = client.ssl.configure("example.com", csr=csr.csr, contact=sample_ssl_contact(phone="+90 555 123 4567"),
+
+        order = client.ssl.initialize("example.com", "PositiveSSL")
+        self.assertEqual(order.certificate_id, CERT_ID)
+        self.assertEqual(transport.last.json(), {"domainName": "example.com", "packageCode": "PositiveSSL"})
+
+        res = client.ssl.configure(order.certificate_id, csr=csr.csr,
+                                   contact=sample_ssl_contact(phone="+90 555 123 4567"),
                                    approver_mail="admin@example.com", authentication_type="email",
                                    web_server_type=dna.WebServerType.APACHE, san_list=["a.example.com",
                                                                                        "b.example.com"])
         self.assertEqual(res.dcv_details, "CNAME _abc")
         body = transport.last.json()
+        self.assertEqual(body["certificateId"], CERT_ID)
+        self.assertNotIn("domainName", body)
         self.assertEqual((body["authenticationType"], body["webServerType"], body["sanList"]),
                          ("Email", "Apache", "a.example.com,b.example.com"))
         self.assertEqual(body["contact"]["phone"], "905551234567")
         self.assertNotIn("wildcardList", body)
-        st = client.ssl.status("example.com")
+
+        st = client.ssl.status(CERT_ID)
         self.assertTrue(st.is_issued)
-        self.assertEqual(transport.last.method, "PUT")
-        self.assertEqual(client.ssl.content("example.com").chain, "CERT\nINT1\n")
-        self.assertEqual(client.ssl.approvers("example.com"), ["admin@example.com", "hostmaster@example.com"])
+        self.assertEqual((st.certificate_id, st.domain_name, st.expires_at.year), (CERT_ID, "example.com", 2027))
+        r = transport.last
+        self.assertEqual((r.method, r.path, r.json()), ("PUT", "/api/v1/ssls/check-status",
+                                                        {"certificateId": CERT_ID}))
+
+        content = client.ssl.content(CERT_ID)
+        self.assertEqual((content.certificate_id, content.chain), (CERT_ID, "CERT\nINT1\n"))
+        self.assertEqual(transport.last.query, {"CertificateId": [CERT_ID]})
+
+        cert = client.ssl.get(CERT_ID)
+        self.assertEqual((cert.certificate_id, cert.package_code, cert.subscription.expires_at.year),
+                         (CERT_ID, "PositiveSSL", 2027))
+        self.assertEqual(transport.last.query, {"CertificateId": [CERT_ID]})
+
+        reissued = client.ssl.reissue(CERT_ID, approver_mail="admin@example.com")
+        self.assertEqual((reissued.csr, reissued.private_key), ("NEW CSR", "NEW KEY"))
+        self.assertEqual(transport.last.json(), {"certificateId": CERT_ID, "approverMail": "admin@example.com"})
+
         with self.assertRaises(dna.OperationError):
-            client.ssl.revoke("example.com")
+            client.ssl.revoke(CERT_ID)
+        r = transport.last
+        self.assertEqual((r.method, r.path, r.query, r.body), ("DELETE", "/api/v1/ssls/revoke",
+                                                               {"CertificateId": [CERT_ID]}, b""))
+
+    def test_renew(self):
+        transport, client = fake(
+            ok({"success": True, "certificateId": RENEWAL_ID, "status": "WaitingForInstall",
+                "message": "SSL certificate renewal initialized successfully. Waiting for installation."}),
+            ok({"success": True, "certificateId": RENEWAL_ID, "status": "WaitingForValidation"}),
+            ok({"success": False, "message": "Renewal is not open yet"}),
+        )
+        res = client.ssl.renew(CERT_ID)
+        self.assertEqual((res.certificate_id, res.status), (RENEWAL_ID, "WaitingForInstall"))
+        r = transport.last
+        self.assertEqual((r.method, r.path, r.json()), ("POST", "/api/v1/ssls/renew", {"certificateId": CERT_ID}))
+
+        # The renewal is a new certificate: it is configured with the id renew returned.
+        client.ssl.configure(res.certificate_id, csr="csr", contact=sample_ssl_contact())
+        self.assertEqual(transport.last.json()["certificateId"], RENEWAL_ID)
+
+        with self.assertRaises(dna.OperationError) as ctx:
+            client.ssl.renew(CERT_ID)
+        self.assertEqual(ctx.exception.message, "Renewal is not open yet")
+
+    def test_renew_is_billable(self):
+        """renew has the safety class of initialize: never repeated blindly, blocked by a read-only client."""
+        renew = dna.SSLRenewRequest(CERT_ID).endpoint()
+        initialize = dna.SSLInitializeRequest("example.com", "PositiveSSL").endpoint()
+        self.assertIs(renew.safety, dna.Safety.BILLABLE)
+        self.assertEqual((renew.safety, renew.idempotent), (initialize.safety, initialize.idempotent))
+        self.assertFalse(renew.idempotent)
+
+        transport, client = fake(Reply(503), ok({"success": True}))
+        with self.assertRaises(dna.ServerError):
+            client.ssl.renew(CERT_ID)
+        self.assertEqual(len(transport.requests), 1, "a billable request was repeated")
+
+        transport, client = fake(dna.TransportError("connection reset by peer"), ok({"success": True}))
+        with self.assertRaises(dna.NetworkError) as ctx:
+            client.ssl.renew(CERT_ID)
+        self.assertEqual(len(transport.requests), 1, "a billable request was repeated")
+        self.assertTrue(ctx.exception.outcome_unknown)
+
+        transport, client = fake(Reply(429, "", {"Retry-After": "1"}), ok({"success": True}))
+        client.ssl.renew(CERT_ID)  # a 429 is rejected before anything happens, so it is retried
+        self.assertEqual(len(transport.requests), 2)
+
+        transport, client = fake(ok({"success": True}), read_only=True)
+        with self.assertRaises(dna.ReadOnlyError):
+            client.ssl.renew(CERT_ID)
+        self.assertEqual(transport.requests, [])
+
+        _, client = fake(api_error(402, "Dna.SslService:Ssl:10045", "Insufficient balance"))
+        with self.assertRaises(dna.InsufficientBalanceError):
+            client.ssl.renew(CERT_ID)
+
+    def test_list(self):
+        transport, client = fake(
+            ok({"totalCount": 3, "items": [
+                {"certificateId": RENEWAL_ID, "domainName": "example.com", "packageCode": "PositiveSSL",
+                 "packageName": "Positive SSL", "status": "WaitingForInstall", "statusReason": "None",
+                 "isConfigured": False, "isIssued": False, "purchasedAt": "2026-11-20T10:00:00",
+                 "subscriptionExpiresAt": "2027-11-20T10:00:00", "certificateExpiresAt": None,
+                 "renewedFromCertificateId": CERT_ID},
+                {"certificateId": CERT_ID, "domainName": "example.com", "status": "Active", "isConfigured": True,
+                 "isIssued": True, "certificateExpiresAt": "2026-12-01T00:00:00Z",
+                 "renewedFromCertificateId": None}]}),
+            ok({"totalCount": 0, "items": []}),
+        )
+        page = client.ssl.list(domain_name=" example.com ", limit=2)
+        self.assertEqual((page.total_count, len(page)), (3, 2))
+        r = transport.last
+        self.assertEqual((r.method, r.path), ("GET", "/api/v1/ssls"))
+        self.assertEqual(r.query, {"DomainName": ["example.com"], "MaxResultCount": ["2"]})
+        first, second = page
+        self.assertEqual((first.certificate_id, first.domain_name, first.package_code, first.package_name),
+                         (RENEWAL_ID, "example.com", "PositiveSSL", "Positive SSL"))
+        self.assertEqual((first.status, first.status_reason, first.is_configured, first.is_issued),
+                         ("WaitingForInstall", "None", False, False))
+        self.assertEqual((first.purchased_at.year, first.subscription_expires_at.year), (2026, 2027))
+        self.assertIsNone(first.certificate_expires_at)
+        self.assertEqual(first.renewed_from_certificate_id, CERT_ID)
+        self.assertEqual((second.is_issued, second.certificate_expires_at.month, second.renewed_from_certificate_id),
+                         (True, 12, ""))
+
+        client.ssl.list(skip=2, limit=2)
+        self.assertEqual(transport.last.query, {"SkipCount": ["2"], "MaxResultCount": ["2"]})
+        self.assertEqual(len(client.ssl.list()), 0)
+        self.assertEqual(transport.last.query, {})
+        with self.assertRaises(dna.InputError):
+            client.ssl.list(skip=-1)
+        with self.assertRaises(dna.InputError):
+            client.ssl.list(limit=-1)
+        self.assertEqual(len(transport.requests), 3)
+
+    def test_all_fetches_every_page(self):
+        transport, client = fake(
+            ok({"totalCount": 3, "items": [{"certificateId": CERT_ID}, {"certificateId": RENEWAL_ID}]}),
+            ok({"totalCount": 3, "items": [{"certificateId": "c-3"}]}),
+        )
+        ids = [c.certificate_id for c in client.ssl.all(domain_name="example.com", page_size=2)]
+        self.assertEqual(ids, [CERT_ID, RENEWAL_ID, "c-3"])
+        first, second = transport.requests
+        self.assertEqual(first.query, {"DomainName": ["example.com"], "MaxResultCount": ["2"]})
+        self.assertEqual(second.query, {"DomainName": ["example.com"], "SkipCount": ["2"], "MaxResultCount": ["2"]})
+
+    def test_approvers(self):
+        mails = ["admin@example.com", "hostmaster@example.com"]
+        transport, client = fake(ok({"mails": mails}))
+        # An existing certificate.
+        self.assertEqual(client.ssl.approvers(certificate_id=CERT_ID), mails)
+        r = transport.last
+        self.assertEqual((r.method, r.path, r.query), ("GET", "/api/v1/ssls/approvers", {"CertificateId": [CERT_ID]}))
+        # Before a purchase.
+        self.assertEqual(client.ssl.approvers(domain_name="example.com", package_code="PositiveSSL"), mails)
+        self.assertEqual(transport.last.query, {"DomainName": ["example.com"], "PackageCode": ["PositiveSSL"]})
+
+        _, client = fake(ok(None))
+        self.assertEqual(client.ssl.approvers(certificate_id=CERT_ID), [])
+
+    def test_approvers_validation(self):
+        transport, client = fake()
+        with self.assertRaises(dna.InputError) as ctx:
+            client.ssl.approvers(domain_name="example.com")
+        self.assertEqual([f.field for f in ctx.exception.fields], ["package_code"])
+        self.assertIn("package_code: is required with domain_name", str(ctx.exception))
+        for kwargs in ({}, {"package_code": "PositiveSSL"}, {"certificate_id": " ", "domain_name": " "}):
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaises(dna.InputError) as ctx:
+                    client.ssl.approvers(**kwargs)
+                self.assertIn("pass certificate_id (an existing certificate), or domain_name and package_code",
+                              str(ctx.exception))
+        with self.assertRaises(dna.InputError) as ctx:
+            client.ssl.approvers(certificate_id="example.com")
+        self.assertIn("must be a certificate id (GUID)", str(ctx.exception))
+        with self.assertRaises(TypeError):
+            client.ssl.approvers("example.com")  # keyword-only: the old positional domain name is refused
+        self.assertEqual(transport.requests, [])
+
+    def test_certificate_id_guard(self):
+        """A domain name passed where the API now wants a certificate id never reaches the API."""
+        transport, client = fake(ok({"success": True}))
+        calls = {
+            "SSLConfigureRequest": lambda value: client.ssl.configure(value, csr="csr", contact=sample_ssl_contact()),
+            "SSLStatusRequest": client.ssl.status,
+            "SSLGetRequest": client.ssl.get,
+            "SSLContentRequest": client.ssl.content,
+            "SSLReissueRequest": client.ssl.reissue,
+            "SSLRevokeRequest": client.ssl.revoke,
+            "SSLRenewRequest": client.ssl.renew,
+        }
+        not_ids = ("example.com", "*.example.com", "c-1", CERT_ID[:-1], CERT_ID + "0", "{%s}" % CERT_ID,
+                   CERT_ID.replace("-", ""), CERT_ID.replace("a", "g"))
+        for name, call in calls.items():
+            for bad in not_ids:
+                with self.subTest(request=name, value=bad):
+                    with self.assertRaises(dna.InputError) as ctx:
+                        call(bad)
+                    err = ctx.exception
+                    self.assertEqual((err.request, [f.field for f in err.fields]), (name, ["certificate_id"]))
+                    self.assertIs(err.kind, dna.ErrorKind.INVALID_INPUT)
+                    text = str(err)
+                    self.assertIn("certificate_id: must be a certificate id (GUID), got %r" % bad, text)
+                    self.assertIn("no longer addressed by domain name", text)
+                    self.assertIn("ssl.initialize or ssl.renew", text)
+                    self.assertIn("client.ssl.list(domain_name=...)", text)
+            for blank in ("", "   ", None):
+                with self.subTest(request=name, value=blank):
+                    with self.assertRaises(dna.InputError) as ctx:
+                        call(blank)
+                    self.assertIn("certificate_id: is required", str(ctx.exception))
+        self.assertEqual(transport.requests, [], "an invalid certificate id was sent")
+
+    def test_certificate_id_is_trimmed_and_any_case(self):
+        transport, client = fake(ok({"certificateId": CERT_ID}))
+        client.ssl.status("  %s\n" % CERT_ID.upper())
+        self.assertEqual(transport.last.json(), {"certificateId": CERT_ID.upper()})
+        client.ssl.get(uuid.UUID(CERT_ID))
+        self.assertEqual(transport.last.query, {"CertificateId": [CERT_ID]})
 
     def test_validation(self):
         transport, client = fake()
         with self.assertRaises(dna.InputError) as ctx:
-            client.ssl.configure("example.com", csr="", contact=dna.SSLContact(), approver_mail="nope")
+            client.ssl.configure(CERT_ID, csr="", contact=dna.SSLContact(), approver_mail="nope")
         fields = {f.field for f in ctx.exception.fields}
         self.assertTrue({"csr", "approver_mail", "contact.first_name", "contact.company_name"} <= fields)
+        self.assertNotIn("certificate_id", fields)
         with self.assertRaises(dna.InputError):
             client.ssl.generate_csr("example.com", country="Turkey", state="", locality="", organization="",
                                     organization_unit="")
@@ -608,6 +851,7 @@ class EveryServiceMethodTest(TestCase):
         c = sample_contact()
         cases = [
             ("account.get", lambda cl: cl.account.get(), "GET", "/api/v1/deposit/accounts/me"),
+            ("account.profile", lambda cl: cl.account.profile(), "GET", "/api/v1/resellers/me"),
             ("account.transactions", lambda cl: cl.account.transactions(), "GET", "/api/v1/deposit/transactions"),
             ("contacts.get", lambda cl: cl.contacts.get("DNA-1"), "GET", "/api/v1/contacts/DNA-1"),
             ("contacts.create", lambda cl: cl.contacts.create(c), "POST", "/api/v1/contacts"),
@@ -684,14 +928,16 @@ class EveryServiceMethodTest(TestCase):
             ("ssl.check_csr", lambda cl: cl.ssl.check_csr("csr"), "POST", "/api/v1/ssls/check-csr"),
             ("ssl.initialize", lambda cl: cl.ssl.initialize("example.com", "PositiveSSL"), "POST",
              "/api/v1/ssls/initialize"),
-            ("ssl.configure", lambda cl: cl.ssl.configure("example.com", csr="csr", contact=sample_ssl_contact()),
+            ("ssl.renew", lambda cl: cl.ssl.renew(CERT_ID), "POST", "/api/v1/ssls/renew"),
+            ("ssl.configure", lambda cl: cl.ssl.configure(CERT_ID, csr="csr", contact=sample_ssl_contact()),
              "PUT", "/api/v1/ssls/configure"),
-            ("ssl.status", lambda cl: cl.ssl.status("example.com"), "PUT", "/api/v1/ssls/check-status"),
-            ("ssl.get", lambda cl: cl.ssl.get("example.com"), "GET", "/api/v1/ssls/certificate"),
-            ("ssl.content", lambda cl: cl.ssl.content("example.com"), "GET", "/api/v1/ssls/certificate-content"),
-            ("ssl.reissue", lambda cl: cl.ssl.reissue("example.com"), "POST", "/api/v1/ssls/reissue"),
-            ("ssl.approvers", lambda cl: cl.ssl.approvers("example.com"), "GET", "/api/v1/ssls/approvers"),
-            ("ssl.revoke", lambda cl: cl.ssl.revoke("example.com"), "DELETE", "/api/v1/ssls/revoke"),
+            ("ssl.status", lambda cl: cl.ssl.status(CERT_ID), "PUT", "/api/v1/ssls/check-status"),
+            ("ssl.get", lambda cl: cl.ssl.get(CERT_ID), "GET", "/api/v1/ssls/certificate"),
+            ("ssl.content", lambda cl: cl.ssl.content(CERT_ID), "GET", "/api/v1/ssls/certificate-content"),
+            ("ssl.list", lambda cl: cl.ssl.list(), "GET", "/api/v1/ssls"),
+            ("ssl.reissue", lambda cl: cl.ssl.reissue(CERT_ID), "POST", "/api/v1/ssls/reissue"),
+            ("ssl.approvers", lambda cl: cl.ssl.approvers(certificate_id=CERT_ID), "GET", "/api/v1/ssls/approvers"),
+            ("ssl.revoke", lambda cl: cl.ssl.revoke(CERT_ID), "DELETE", "/api/v1/ssls/revoke"),
             ("hosting.packages", lambda cl: cl.hosting.packages(), "GET", "/api/v1/hostings/packages"),
             ("hosting.plans", lambda cl: cl.hosting.plans(), "GET", "/api/v1/hostings/plans"),
             ("hosting.create", lambda cl: cl.hosting.create("example.com", "Linux-Starter"), "POST",

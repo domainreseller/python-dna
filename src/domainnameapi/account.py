@@ -1,4 +1,4 @@
-"""The reseller account: balances and the balance ledger. CLI: ``dna account ...``"""
+"""The reseller account: balances, the profile and the balance ledger. CLI: ``dna account ...``"""
 
 from __future__ import annotations
 
@@ -7,15 +7,17 @@ from datetime import datetime, timezone
 from typing import Any, Iterable, Iterator, List, Optional
 
 from ._service import Service
-from .enums import ChargeType, ProductType, TransactionStatus, TransactionType
-from .model import Model, Page, enum_value, integer, number, page_of, paginate, text, timestamp
+from .enums import AccountCurrency, ChargeType, ProductType, ResellerStatus, TransactionStatus, TransactionType
+from .model import Model, Page, boolean, enum_value, integer, number, page_of, paginate, text, timestamp
 from .request import BaseRequest, Query, Safety, Validator, as_list, enum_values, parse_enum, validate_paging
 
 __all__ = [
     "Account",
     "AccountGetRequest",
+    "AccountProfileRequest",
     "AccountService",
     "AccountTransactionsRequest",
+    "ResellerProfile",
     "Transaction",
 ]
 
@@ -45,6 +47,27 @@ class Account(Model):
         if code in ("TRY", "TL"):
             return self.try_balance
         return None
+
+
+@dataclass
+class ResellerProfile(Model):
+    """Who the credentials belong to: the reseller, its state and its settings."""
+
+    #: The reseller ID (a GUID), the one the client was created with.
+    id: str = text("id")
+    #: The reseller's number.
+    reseller_auto_id: int = integer("resellerAutoId")
+    name: str = text("name")
+    company_name: str = text("companyName")
+    reseller_group_name: str = text("resellerGroupName")
+    #: The currency the account is kept in.
+    account_currency: Optional[AccountCurrency] = enum_value("accountCurrency", AccountCurrency)
+    status: Optional[ResellerStatus] = enum_value("status", ResellerStatus)
+    is_sub_reseller: bool = boolean("isSubReseller")
+    #: ``True`` when the balance is suspended: billable operations are refused.
+    is_balance_suspended: bool = boolean("isBalanceSuspended")
+    #: ``True`` when the account may use the MCP server.
+    is_mcp_enabled: bool = boolean("isMcpEnabled")
 
 
 @dataclass
@@ -93,6 +116,16 @@ class AccountGetRequest(BaseRequest):
     path = "/api/v1/deposit/accounts/me"
     safety = Safety.READ
     response = Account
+
+
+@dataclass
+class AccountProfileRequest(BaseRequest):
+    """Read the reseller's profile. CLI: ``dna account profile``"""
+
+    method = "GET"
+    path = "/api/v1/resellers/me"
+    safety = Safety.READ
+    response = ResellerProfile
 
 
 @dataclass
@@ -165,7 +198,7 @@ def _comparable(value: datetime) -> datetime:
 
 
 class AccountService(Service):
-    """The reseller account: balances and the balance ledger. CLI: ``dna account``"""
+    """The reseller account: balances, the profile and the balance ledger. CLI: ``dna account``"""
 
     __slots__ = ()
 
@@ -175,6 +208,10 @@ class AccountService(Service):
         Also the cheapest way to check that the credentials work.
         """
         return self._send(AccountGetRequest())
+
+    def profile(self) -> ResellerProfile:
+        """The reseller behind the credentials: name, company, group, account currency and status."""
+        return self._send(AccountProfileRequest())
 
     def transactions(
         self,

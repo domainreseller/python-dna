@@ -20,7 +20,7 @@
 qeydiyyat, yenilənmə və transfer, DNS, DNSSEC, kontaktlar, SSL sertifikatları, hosting, sifarişlər, məhsul
 kataloqu və balansınız.
 
-- **API-nin bütün 64 əməliyyatı**, [`dna` CLI](https://github.com/domainreseller/cli) ilə eyni şəkildə qruplaşdırılıb:
+- **API-nin bütün 67 əməliyyatı**, [`dna` CLI](https://github.com/domainreseller/cli) ilə eyni şəkildə qruplaşdırılıb:
   `dna domain info` əmri `client.domains.info`, `dna dns add` əmri `client.dns.add` qarşılığıdır.
 - **Tipli nəticələr və enum-lar**: lüğətlər deyil, `datetime` sahələri olan dataclass-lar və adlandırılmış statuslar
   (`d.status == DomainStatus.PENDING_DELETE`). Redaktorunuz hər sahəni tamamlayır.
@@ -113,12 +113,12 @@ olur; yoxlamağın ən ucuz yolu `client.account.get()` çağırışıdır.
 
 | Servis            | CLI qrupu     | Metodlar                                                                                                                                                          |
 |-------------------|---------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `client.account`  | `dna account` | `get`, `transactions`, `all_transactions`                                                                                                                         |
+| `client.account`  | `dna account` | `get`, `profile`, `transactions`, `all_transactions`                                                                                                              |
 | `client.contacts` | `dna contact` | `get`, `create`, `update`, `verification`, `resend_verification`                                                                                                  |
 | `client.domains`  | `dna domain`  | `search`, `bulk_search`, `list`, `all`, `info`, `register`, `register_with_contacts`, `renew`, `renew_check`, `restore`, `transfer`, `transfer_check`, `transfer_status`, `lock`, `unlock`, `set_privacy`, `update_auth_code`, `set_name_servers`, `add_host`, `update_host`, `delete_host`, `update_contacts`, `set_contact_handles`, `documents`, `upload_documents`, `forwarding`, `set_forwarding`, `delete_forwarding` |
 | `client.dns`      | `dna dns`     | `list`, `find`, `add`, `update`, `delete`, `apply`                                                                                                                |
 | `client.dnssec`   | `dna dnssec`  | `get`, `add`, `remove`, `disable`                                                                                                                                 |
-| `client.ssl`      | `dna ssl`     | `generate_csr`, `check_csr`, `initialize`, `configure`, `status`, `get`, `content`, `reissue`, `approvers`, `revoke`                                              |
+| `client.ssl`      | `dna ssl`     | `generate_csr`, `check_csr`, `initialize`, `configure`, `status`, `get`, `content`, `list`, `all`, `reissue`, `renew`, `approvers`, `revoke`                      |
 | `client.hosting`  | `dna hosting` | `packages`, `plans`, `create`, `wait`, `get`, `get_by_token`, `status`                                                                                            |
 | `client.orders`   | `dna order`   | `get`                                                                                                                                                             |
 | `client.products` | `dna product` | `list`, `info`, `tlds`, `all_tlds`, `tld`, `ssls`                                                                                                                 |
@@ -291,14 +291,41 @@ hər sorğu üçün 50 MB) yükləmədən əvvəl yoxlanılır.
 ```python
 csr = client.ssl.generate_csr("example.com", country="TR", state="Istanbul", locality="Istanbul",
                               organization="Example Ltd", organization_unit="IT")
-client.ssl.initialize("example.com", "PositiveSSL")  # balansdan ödəniş çıxır
-client.ssl.configure("example.com", csr=csr.csr, approver_mail="admin@example.com",
+order = client.ssl.initialize("example.com", "PositiveSSL")  # balansdan ödəniş çıxır
+cert_id = order.certificate_id  # saxlayın: sonrakı hər çağırışda lazımdır
+client.ssl.configure(cert_id, csr=csr.csr, approver_mail="admin@example.com",
                      authentication_type=dna.AuthenticationType.EMAIL,
                      web_server_type=dna.WebServerType.APACHE, contact=ssl_contact)
-st = client.ssl.status("example.com")  # st.is_issued olana qədər sorğulayın
-cert = client.ssl.content("example.com")
+st = client.ssl.status(cert_id)  # st.is_issued olana qədər sorğulayın
+cert = client.ssl.content(cert_id)
 open("example.com.crt", "w").write(cert.chain)
 ```
+
+Bir domenin bir neçə sertifikatı ola bilər; buna görə mövcud sertifikat domen adı ilə deyil,
+**sertifikat identifikatoru** (GUID) ilə göstərilir: `configure`, `status`, `get`, `content`, `reissue`, `revoke`
+və `renew` metodlarının hamısı onu qəbul edir. `initialize` və `renew` bu identifikatoru qaytarır, `list` isə onu
+yenidən tapır. Sertifikat identifikatoru gözlənilən yerə domen adı verilərsə, heç nə göndərilmədən `InputError`
+istisnası qaldırılır.
+
+```python
+for c in client.ssl.list(domain_name="example.com"):  # ən yenidən köhnəyə; ssl.all(...) bütün səhifələri gətirir
+    print(c.certificate_id, c.status, c.subscription_expires_at)
+
+client.ssl.approvers(certificate_id=cert_id)  # mövcud sertifikat
+client.ssl.approvers(domain_name="example.com", package_code="PositiveSSL")  # satın almadan əvvəl
+
+renewal = client.ssl.renew(cert_id)  # balansdan ödəniş çıxır
+# Yenilənmə öz identifikatoru olan yeni sertifikatdır: məhz onu konfiqurasiya edin.
+client.ssl.configure(renewal.certificate_id, csr=new_csr.csr, approver_mail="admin@example.com",
+                     authentication_type=dna.AuthenticationType.EMAIL,
+                     web_server_type=dna.WebServerType.APACHE, contact=ssl_contact)
+```
+
+Sertifikatı `initialize` və ya `renew` çağırışından sonrakı 15 gün ərzində konfiqurasiya edin; əks halda o ləğv
+edilir. `renew` abunəliyin bitmə tarixindən (`client.ssl.get(cert_id).subscription.expires_at`) 30 gün əvvəldən
+başlayaraq mümkündür. Yeniləmək üçün əvvəlcə `renew`, sonra isə onun qaytardığı identifikatorla `configure`
+çağırın: `initialize`-i yenidən çağırmaq yenilənmə deyil, satınalma qiyməti ilə əlaqəsi olmayan yeni sertifikat
+alır.
 
 ### Hosting
 
@@ -317,6 +344,7 @@ Hələ hazırlanmaqda olan hosting üçün `create`-i bir daha çağırmayın: i
 ```python
 account = client.account.get()
 usd = account.balance("USD")
+profile = client.account.profile()  # giriş məlumatlarının aid olduğu reseller: name, account_currency, status, ...
 
 for tx in client.account.all_transactions(since=month_start):
     print(tx.creation_time, tx.type, tx.change)

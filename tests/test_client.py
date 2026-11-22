@@ -5,7 +5,7 @@ import os
 from dataclasses import dataclass
 from unittest import mock
 
-from helpers import FakeTransport, Reply, TestCase, api_error, dna, fake, ok
+from helpers import CERT_ID, FakeTransport, Reply, TestCase, api_error, dna, fake, ok
 
 from domainnameapi.client import _Pacer
 from domainnameapi.model import Model, integer, text, timestamp
@@ -106,7 +106,7 @@ class SendingTest(TestCase):
         self.assertIn("DomainLockRequest", str(ctx.exception))
         # Reads sent with POST or PUT still go through.
         transport.replies = [ok({"domainName": "example.com"})]
-        client.ssl.status("example.com")
+        client.ssl.status(CERT_ID)
         self.assertEqual(len(transport.requests), 2)
 
     def test_rate_limit_is_retried_even_for_billable_requests(self):
