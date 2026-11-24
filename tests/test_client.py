@@ -85,6 +85,55 @@ class SendingTest(TestCase):
         self.assertEqual(transport.last.header("Content-Type"), "")
         self.assertEqual(transport.last.body, b"")
 
+    def test_client_info_headers_default(self):
+        transport, client = fake(ok({}))
+        client.account.get()
+        self.assertEqual(transport.last.header("X-App"), "python")
+        self.assertEqual(transport.last.header("X-Version"), dna.__version__)
+        self.assertEqual(client.app_name, dna.DEFAULT_APP)
+        self.assertEqual(client.app_version, dna.__version__)
+        self.assertTrue(transport.last.header("User-Agent").startswith("DomainNameAPI-Python/"))
+
+    def test_client_info_headers_override_and_normalization(self):
+        transport, client = fake(ok({}), app_name=" WiseCP5 ", app_version="V2.0.20-beta",
+                                 user_agent="my-panel/1.4")
+        client.account.get()
+        self.assertEqual(transport.last.header("X-App"), "wisecp5")
+        self.assertEqual(transport.last.header("X-Version"), "2.0.20")
+        self.assertTrue(transport.last.header("User-Agent").startswith("my-panel/1.4 DomainNameAPI-Python/"))
+        self.assertEqual(client.prepare(dna.AccountGetRequest()).headers["X-App"], "wisecp5")
+        for app, version, want_app, want_version in (
+            ("WHMCS Module/8", ".8.13.1.", "whmcsmodule8", "8.13.1"),
+            ("my_panel-2.x", "1", "my_panel-2.x", "1"),
+        ):
+            self.assertEqual(dna.Client("r", "k", app_name=app).app_name, want_app)
+            self.assertEqual(dna.Client("r", "k", app_version=version).app_version, want_version)
+
+    def test_client_info_headers_empty_fallbacks(self):
+        for app, version in (("", ""), ("  ", "   "), ("ŞÇĞ!", "beta"), (None, None)):
+            client = dna.Client("r", "k", app_name=app, app_version=version)
+            self.assertEqual(client.app_name, "python", app)
+            self.assertEqual(client.app_version, dna.__version__, version)
+
+    def test_client_info_headers_from_env(self):
+        env = {"DNA_RESELLER_ID": "rid", "DNA_API_KEY": "key", "DNA_APP": "HostBill", "DNA_APP_VERSION": "v4.0.7"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            client = dna.Client.from_env()
+            self.assertEqual((client.app_name, client.app_version), ("hostbill", "4.0.7"))
+            client = dna.Client.from_env(app_name="blesta", app_version="5.9")
+            self.assertEqual((client.app_name, client.app_version), ("blesta", "5.9"))
+        with mock.patch.dict(os.environ, {"DNA_RESELLER_ID": "rid", "DNA_API_KEY": "key"}, clear=True):
+            client = dna.Client.from_env()
+            self.assertEqual((client.app_name, client.app_version), ("python", dna.__version__))
+
+    def test_client_info_headers_on_retries(self):
+        transport, client = fake(Reply(429, "", {"Retry-After": "0"}), ok({}), app_name="FOSSBilling",
+                                 app_version="0.6.1")
+        client.account.get()
+        self.assertEqual(len(transport.requests), 2)
+        for r in transport.requests:
+            self.assertEqual((r.header("X-App"), r.header("X-Version")), ("fossbilling", "0.6.1"))
+
     def test_validation_stops_the_request(self):
         transport, client = fake()
         with self.assertRaises(dna.InputError) as ctx:

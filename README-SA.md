@@ -100,6 +100,8 @@ client = dna.Client(reseller_id, api_key)
 | `DNA_ENV`         | `production` (الافتراضي) أو `ote`                             |
 | `DNA_TEST_MODE`   | القيمة `true` تختار OTE (كما في حزم DomainNameAPI SDK الأخرى) |
 | `DNA_BASE_URL`    | عنوان URL أساسي مخصص، مثل وسيط (proxy)                        |
+| `DNA_APP`         | تطبيقك، يُرسل في `X-App` (مثل `whmcs`)                        |
+| `DNA_APP_VERSION` | إصدار تطبيقك، يُرسل في `X-Version`                            |
 
 ```python
 client = dna.Client.from_env(user_agent="my-panel/1.4")
@@ -506,12 +508,33 @@ except dna.DomainNameAPIError as err:
 | `read_only=True`                | منع كل طلب ليس قراءة                                                                     |
 | `currency="TRY"`                | عملة أسعار البحث والكتالوج                                                               |
 | `user_agent="app/1.0"`          | وضع اسم منتجك قبل User-Agent                                                             |
+| `app_name="whmcs"`              | تسمية تطبيقك في ترويسة `X-App` (الافتراضي `"python"`)                                    |
+| `app_version="8.13.1"`          | إصدار تطبيقك في ترويسة `X-Version` (الافتراضي: إصدار SDK)                                |
 | `transport=...`                 | طبقة HTTP الخاصة بك (`requests` أو `httpx` أو وسيط وغيرها)؛ راجع `domainnameapi.transport` |
 | `trace=fn`                      | مراقبة كل طلب واستجابة ومحاولة إعادة                                                     |
 | `logger=logging.getLogger(...)` | تسجيل التبادلات في مسجِّل آخر                                                            |
 
 يستخدم النقل الافتراضي `urllib` ويحترم متغيرات `HTTPS_PROXY`. وإذا أردت حزمة شهادات CA خاصة بك، فمرّر
 `transport=dna.UrllibTransport(ssl_context=ctx)`.
+
+### تعريف تطبيقك
+
+يحمل كل طلب ترويستين تُخبران API بالتكامل الذي أرسله:
+
+- `X-App`: التطبيق الذي يستخدم SDK، وقيمته الافتراضية `python`. تُحوَّل القيمة إلى أحرف صغيرة ولا يُبقى إلا على
+  `a-z` و`0-9` و`.` و`_` و`-`.
+- `X-Version`: إصدار ذلك التطبيق، وافتراضيًا إصدار هذا SDK. لا يُبقى إلا على الأرقام والنقاط، فتصبح
+  `V2.0.20-beta` هي `2.0.20`.
+
+ينبغي للوحات التحكم والوحدات المبنية على SDK أن تعرّف بنفسها:
+
+```python
+client = dna.Client(reseller_id, api_key, app_name="WiseCP5", app_version="V2.0.20-beta")
+# X-App: wisecp5, X-Version: 2.0.20
+```
+
+تقرأ `Client.from_env()` أيضًا `DNA_APP` و`DNA_APP_VERSION`. يعود الاسم الفارغ أو غير الصالح إلى `python`، والإصدار
+الفارغ إلى إصدار SDK. لا يتغير User-Agent؛ وما زال `user_agent=` يحدد بادئته.
 
 ## اختبار شيفرتك
 

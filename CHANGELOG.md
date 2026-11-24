@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Every request now carries `X-App` and `X-Version` headers that tell the API which integration sent it. They
+  default to `python` and the SDK version; set them with `Client(app_name=..., app_version=...)` or, for
+  `Client.from_env()`, with `DNA_APP` and `DNA_APP_VERSION`. The name is lowercased and keeps only `a-z`, `0-9`,
+  `.`, `_` and `-`; the version keeps only digits and dots (`V2.0.20-beta` becomes `2.0.20`). An empty or invalid
+  name falls back to `python`, an empty version to the SDK version. New constants: `DEFAULT_APP`, `ENV_APP`,
+  `ENV_APP_VERSION`. The User-Agent is unchanged.
+
 ## [2.1.0] - 2026-11-22
 
 **Breaking, forced by the API.** On 2026-11-20 the API changed its SSL endpoints in production and OTE: a domain

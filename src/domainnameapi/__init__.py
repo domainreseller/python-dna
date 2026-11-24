@@ -28,7 +28,10 @@ from .account import (
     Transaction,
 )
 from .client import (
+    DEFAULT_APP,
     ENV_API_KEY,
+    ENV_APP,
+    ENV_APP_VERSION,
     ENV_BASE_URL,
     ENV_ENVIRONMENT,
     ENV_RESELLER_ID,
@@ -301,6 +304,7 @@ __all__ = [
     "CSR",
     "CSRInfo",
     "DecodeError",
+    "DEFAULT_APP",
     "DEFAULT_TTL",
     "DNSAddRequest",
     "DNSApplyRequest",
@@ -367,6 +371,8 @@ __all__ = [
     "DSRecordStatus",
     "Endpoint",
     "ENV_API_KEY",
+    "ENV_APP",
+    "ENV_APP_VERSION",
     "ENV_BASE_URL",
     "ENV_ENVIRONMENT",
     "ENV_RESELLER_ID",
