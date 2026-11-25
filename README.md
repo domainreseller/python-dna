@@ -100,6 +100,8 @@ client = dna.Client(reseller_id, api_key)
 | `DNA_ENV`         | `production` (default) or `ote`                               |
 | `DNA_TEST_MODE`   | `true` selects OTE (as in the other DomainNameAPI SDKs)       |
 | `DNA_BASE_URL`    | a custom base URL, e.g. a proxy                               |
+| `DNA_APP`         | your application, sent as `X-App` (e.g. `whmcs`)              |
+| `DNA_APP_VERSION` | your application's version, sent as `X-Version`               |
 
 ```python
 client = dna.Client.from_env(user_agent="my-panel/1.4")
@@ -506,12 +508,33 @@ Branch on `code`, not on `message`: messages are localised. API codes look like
 | `read_only=True`                | block every non-read request                                                             |
 | `currency="TRY"`                | currency of search and catalogue prices                                                  |
 | `user_agent="app/1.0"`          | put your product in front of the User-Agent                                              |
+| `app_name="whmcs"`              | name your application in the `X-App` header (default `"python"`)                         |
+| `app_version="8.13.1"`          | your application's version in the `X-Version` header (default: the SDK's)                |
 | `transport=...`                 | your own HTTP layer (`requests`, `httpx`, a proxy, ...); see `domainnameapi.transport`    |
 | `trace=fn`                      | observe every request, response and retry                                                |
 | `logger=logging.getLogger(...)` | log exchanges to another logger                                                          |
 
 The default transport uses `urllib` and honours the `HTTPS_PROXY` variables. For your own CA bundle, pass
 `transport=dna.UrllibTransport(ssl_context=ctx)`.
+
+### Identifying your application
+
+Every request carries two headers that tell the API which integration sent it:
+
+- `X-App`: the application using the SDK, `python` by default. It is lowercased and only `a-z`, `0-9`, `.`,
+  `_` and `-` are kept.
+- `X-Version`: that application's version, this SDK's version by default. Only digits and dots are kept, so
+  `V2.0.20-beta` becomes `2.0.20`.
+
+Panels and modules built on the SDK should name themselves:
+
+```python
+client = dna.Client(reseller_id, api_key, app_name="WiseCP5", app_version="V2.0.20-beta")
+# X-App: wisecp5, X-Version: 2.0.20
+```
+
+`Client.from_env()` also reads `DNA_APP` and `DNA_APP_VERSION`. An empty or invalid name falls back to `python`,
+an empty version to the SDK's version. The User-Agent does not change; `user_agent=` still sets its prefix.
 
 ## Testing your code
 

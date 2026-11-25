@@ -100,6 +100,8 @@ client = dna.Client(reseller_id, api_key)
 | `DNA_ENV`         | `production`（默认）或 `ote`                                  |
 | `DNA_TEST_MODE`   | `true` 选择 OTE（与其他 DomainNameAPI SDK 一致）              |
 | `DNA_BASE_URL`    | 自定义基础 URL，例如代理                                      |
+| `DNA_APP`         | 你的应用，作为 `X-App` 发送（例如 `whmcs`）                      |
+| `DNA_APP_VERSION` | 你的应用版本，作为 `X-Version` 发送                            |
 
 ```python
 client = dna.Client.from_env(user_agent="my-panel/1.4")
@@ -506,12 +508,31 @@ except dna.DomainNameAPIError as err:
 | `read_only=True`                | 阻止所有非读取请求                                                                       |
 | `currency="TRY"`                | 搜索价格与目录价格的币种                                                                 |
 | `user_agent="app/1.0"`          | 将你的产品名放在 User-Agent 前面                                                         |
+| `app_name="whmcs"`              | 在 `X-App` 请求头中标明你的应用（默认 `"python"`）                                            |
+| `app_version="8.13.1"`          | 在 `X-Version` 请求头中标明你的应用版本（默认：SDK 版本）                                          |
 | `transport=...`                 | 你自己的 HTTP 层（`requests`、`httpx`、代理等）；参见 `domainnameapi.transport`          |
 | `trace=fn`                      | 观察每个请求、响应和重试                                                                 |
 | `logger=logging.getLogger(...)` | 将交互记录到另一个日志记录器                                                             |
 
 默认传输层使用 `urllib`，并遵循 `HTTPS_PROXY` 等变量。若要使用你自己的 CA 证书包，请传入
 `transport=dna.UrllibTransport(ssl_context=ctx)`。
+
+### 标识你的应用
+
+每个请求都带有两个请求头，告诉 API 是哪个集成发送的：
+
+- `X-App`：使用本 SDK 的应用，默认为 `python`。值会转为小写，只保留 `a-z`、`0-9`、`.`、`_` 和 `-`。
+- `X-Version`：该应用的版本，默认为本 SDK 的版本。只保留数字和点，因此 `V2.0.20-beta` 会变成 `2.0.20`。
+
+基于本 SDK 构建的面板和模块应当标明自己：
+
+```python
+client = dna.Client(reseller_id, api_key, app_name="WiseCP5", app_version="V2.0.20-beta")
+# X-App: wisecp5, X-Version: 2.0.20
+```
+
+`Client.from_env()` 还会读取 `DNA_APP` 和 `DNA_APP_VERSION`。名称为空或无效时回退为 `python`，版本为空时回退为
+SDK 版本。User-Agent 不变；`user_agent=` 仍然设置其前缀。
 
 ## 测试你的代码
 

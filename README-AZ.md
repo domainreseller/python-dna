@@ -100,6 +100,8 @@ client = dna.Client(reseller_id, api_key)
 | `DNA_ENV`         | `production` (susmaya görə) və ya `ote`                       |
 | `DNA_TEST_MODE`   | `true` OTE-ni seçir (digər DomainNameAPI SDK-larındakı kimi)  |
 | `DNA_BASE_URL`    | xüsusi baza URL, məsələn proksi                               |
+| `DNA_APP`         | tətbiqiniz, `X-App` kimi göndərilir (məs. `whmcs`)            |
+| `DNA_APP_VERSION` | tətbiqinizin versiyası, `X-Version` kimi göndərilir           |
 
 ```python
 client = dna.Client.from_env(user_agent="my-panel/1.4")
@@ -514,12 +516,33 @@ except dna.DomainNameAPIError as err:
 | `read_only=True`                | oxuma olmayan hər sorğunu bloklayır                                                      |
 | `currency="TRY"`                | axtarış və kataloq qiymətlərinin valyutası                                               |
 | `user_agent="app/1.0"`          | məhsulunuzu User-Agent-in əvvəlinə əlavə edir                                            |
+| `app_name="whmcs"`              | tətbiqinizi `X-App` başlığında adlandırır (standart `"python"`)                          |
+| `app_version="8.13.1"`          | tətbiqinizin versiyası, `X-Version` başlığında (standart: SDK-nın versiyası)             |
 | `transport=...`                 | öz HTTP qatınız (`requests`, `httpx`, proksi, ...); bax `domainnameapi.transport`        |
 | `trace=fn`                      | hər sorğunu, cavabı və təkrar cəhdi müşahidə edir                                        |
 | `logger=logging.getLogger(...)` | mübadilələri başqa logger-ə loglayır                                                     |
 
 Susmaya görə transport `urllib` istifadə edir və `HTTPS_PROXY` dəyişənlərinə riayət edir. Öz CA paketiniz üçün
 `transport=dna.UrllibTransport(ssl_context=ctx)` ötürün.
+
+### Tətbiqinizin tanıdılması
+
+Hər sorğu API-yə onu hansı inteqrasiyanın göndərdiyini bildirən iki başlıq daşıyır:
+
+- `X-App`: SDK-dan istifadə edən tətbiq, standart olaraq `python`. Kiçik hərflərə çevrilir; yalnız `a-z`,
+  `0-9`, `.`, `_` və `-` saxlanılır.
+- `X-Version`: həmin tətbiqin versiyası, standart olaraq bu SDK-nın versiyası. Yalnız rəqəmlər və nöqtələr
+  saxlanılır, yəni `V2.0.20-beta` `2.0.20` olur.
+
+SDK üzərində qurulan panellər və modullar özlərini adlandırmalıdır:
+
+```python
+client = dna.Client(reseller_id, api_key, app_name="WiseCP5", app_version="V2.0.20-beta")
+# X-App: wisecp5, X-Version: 2.0.20
+```
+
+`Client.from_env()` həmçinin `DNA_APP` və `DNA_APP_VERSION` dəyişənlərini oxuyur. Boş və ya etibarsız ad `python`-a,
+boş versiya isə SDK-nın versiyasına qayıdır. User-Agent dəyişmir; `user_agent=` əvvəlki kimi onun prefiksini təyin edir.
 
 ## Kodunuzun test edilməsi
 

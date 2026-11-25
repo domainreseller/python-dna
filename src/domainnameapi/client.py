@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import random
+import re
 import threading
 import time
 import uuid
@@ -18,7 +19,7 @@ from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Sequence, Union
 from urllib.parse import quote_plus, urlencode, urlsplit
 
-from ._version import USER_AGENT
+from ._version import USER_AGENT, __version__
 from .errors import (
     ConfigurationError,
     DecodeError,
@@ -46,7 +47,10 @@ from .ssl import SSLService
 __all__ = [
     "ApiResponse",
     "Client",
+    "DEFAULT_APP",
     "ENV_API_KEY",
+    "ENV_APP",
+    "ENV_APP_VERSION",
     "ENV_BASE_URL",
     "ENV_ENVIRONMENT",
     "ENV_RESELLER_ID",
@@ -74,6 +78,13 @@ ENV_ENVIRONMENT = "DNA_ENV"
 ENV_TEST_MODE = "DNA_TEST_MODE"
 #: Overrides the environment's URL.
 ENV_BASE_URL = "DNA_BASE_URL"
+#: The application using the SDK, sent as ``X-App`` (see ``Client(app_name=...)``).
+ENV_APP = "DNA_APP"
+#: That application's version, sent as ``X-Version`` (see ``Client(app_version=...)``).
+ENV_APP_VERSION = "DNA_APP_VERSION"
+
+#: The ``X-App`` value when the integration does not name itself.
+DEFAULT_APP = "python"
 
 log = logging.getLogger("domainnameapi")
 log.addHandler(logging.NullHandler())
@@ -288,6 +299,18 @@ def _encode_query(query: Any) -> str:
     return urlencode(out, quote_via=quote_plus)
 
 
+def _normalize_app(value: Optional[str]) -> str:
+    """Lowercase, keep only ``[a-z0-9._-]``; empty means :data:`DEFAULT_APP`."""
+    app = re.sub(r"[^a-z0-9._-]", "", (value or "").strip().lower())
+    return app or DEFAULT_APP
+
+
+def _normalize_version(value: Optional[str]) -> str:
+    """Keep digits and dots, trim surrounding dots; empty means the SDK version."""
+    version = re.sub(r"[^0-9.]", "", value or "").strip(".")
+    return version or re.sub(r"[^0-9.]", "", __version__).strip(".")
+
+
 def _backoff(attempt: int) -> float:
     return 0.5 * (2 ** (attempt - 1)) + random.uniform(0, 0.25)
 
@@ -371,6 +394,11 @@ class Client:
     :param currency: currency (``"USD"``, ``"TRY"``) of search and catalogue prices when a call
         does not name one; without it the API uses the account's currency.
     :param user_agent: your product, put in front of the User-Agent, e.g. ``"my-panel/1.4"``.
+    :param app_name: the application using the SDK, sent as ``X-App`` with every request, e.g.
+        ``"whmcs"``. Lowercased; only ``a-z``, ``0-9``, ``.``, ``_`` and ``-`` are kept. Empty or
+        nothing left means ``"python"``.
+    :param app_version: that application's version, sent as ``X-Version``. Only digits and dots
+        are kept (``"V2.0.20-beta"`` becomes ``"2.0.20"``); empty means this SDK's version.
     :param transport: an object with ``send(HttpRequest) -> HttpResponse``; default
         :class:`~domainnameapi.transport.UrllibTransport`.
     :param trace: a callable (or a list of them) called with every :class:`TraceEvent`.
@@ -394,6 +422,8 @@ class Client:
         read_only: bool = False,
         currency: Optional[str] = None,
         user_agent: Optional[str] = None,
+        app_name: Optional[str] = None,
+        app_version: Optional[str] = None,
         transport: Optional[Transport] = None,
         trace: Union[Callable[[TraceEvent], Any], Sequence[Callable[[TraceEvent], Any]], None] = None,
         logger: Optional[logging.Logger] = None,
@@ -413,6 +443,8 @@ class Client:
         self._currency = (currency or "").strip().upper()
         product = (user_agent or "").strip()
         self._user_agent = product + " " + USER_AGENT if product else USER_AGENT
+        self._app_name = _normalize_app(app_name)
+        self._app_version = _normalize_version(app_version)
         self._transport: Transport = transport if transport is not None else UrllibTransport()
         if trace is None:
             self._trace: List[Callable[[TraceEvent], Any]] = []
@@ -449,8 +481,9 @@ class Client:
         """Create a client from the environment variables the ``dna`` CLI uses.
 
         ``DNA_RESELLER_ID``, ``DNA_API_KEY``, ``DNA_ENV`` (``production`` or
-        ``ote``; or ``DNA_TEST_MODE=true``) and ``DNA_BASE_URL``. Keyword
-        arguments are passed to :class:`Client` and win over the environment.
+        ``ote``; or ``DNA_TEST_MODE=true``) and ``DNA_BASE_URL``, plus
+        ``DNA_APP`` and ``DNA_APP_VERSION`` for ``app_name`` and ``app_version``.
+        Keyword arguments are passed to :class:`Client` and win over the environment.
         """
         env = os.environ
         reseller_id = options.pop("reseller_id", None) or env.get(ENV_RESELLER_ID, "")
@@ -461,6 +494,10 @@ class Client:
             options["environment"] = env.get(ENV_ENVIRONMENT) or env.get(ENV_TEST_MODE) or Environment.PRODUCTION
         if "base_url" not in options and env.get(ENV_BASE_URL, "").strip():
             options["base_url"] = env[ENV_BASE_URL]
+        if "app_name" not in options and env.get(ENV_APP, "").strip():
+            options["app_name"] = env[ENV_APP]
+        if "app_version" not in options and env.get(ENV_APP_VERSION, "").strip():
+            options["app_version"] = env[ENV_APP_VERSION]
         return cls(reseller_id, api_key, **options)
 
     # -- properties ---------------------------------------------------------
@@ -484,6 +521,16 @@ class Client:
     def currency(self) -> str:
         """The default price currency, or ``""`` for the account's."""
         return self._currency
+
+    @property
+    def app_name(self) -> str:
+        """The ``X-App`` value sent with every request (``"python"`` by default)."""
+        return self._app_name
+
+    @property
+    def app_version(self) -> str:
+        """The ``X-Version`` value sent with every request (this SDK's version by default)."""
+        return self._app_version
 
     @property
     def reseller_id(self) -> str:
@@ -565,6 +612,8 @@ class Client:
             "X-API-KEY": self._api_key,
             "__reseller": self._reseller_id,
             "X-Correlation-ID": corr_id,
+            "X-App": self._app_name,
+            "X-Version": self._app_version,
         }
         if body is not None:
             headers["Content-Type"] = "application/json"
