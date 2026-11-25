@@ -12,14 +12,12 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
-        include:
-          # ubuntu-latest no longer ships 3.9
-          - os: ubuntu-22.04
-            python-version: "3.9"
-          - os: windows-latest
-            python-version: "3.12"
-          - os: macos-latest
-            python-version: "3.12"
+        # ubuntu-latest no longer ships 3.9. macOS runs only in the
+        # domainreseller repository: forks get no macOS runner, so the job sat
+        # queued for 15 minutes, was cancelled and turned the whole run red.
+        include: ${{ fromJSON(github.repository_owner == 'domainreseller'
+          && '[{"os":"ubuntu-22.04","python-version":"3.9"},{"os":"windows-latest","python-version":"3.12"},{"os":"macos-latest","python-version":"3.12"}]'
+          || '[{"os":"ubuntu-22.04","python-version":"3.9"},{"os":"windows-latest","python-version":"3.12"}]') }}
     steps:
       - uses: actions/checkout@v4
 
